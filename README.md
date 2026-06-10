@@ -1,52 +1,70 @@
-# 🍒 Il Ciliegio — Social PR Agent
+# 🍒 Il Ciliegio — Social Media Agent
 
 Agente editoriale autonomo per la gestione dei social media (Facebook e Instagram) dell'Azienda Agricola Il Ciliegio di Monteriggioni, Siena.
 
-## Versione attuale: v1.0.0
+## Versione attuale: v1.1.0
 
 ---
 
 ## 🚀 Deploy su GitHub Pages
 
-1. Crea un repository su GitHub (es. `ciliegio-social-agent`)
-2. Carica `CiliegioPR.html` nella root del repo
-3. Vai su **Settings → Pages → Branch: main → / (root)** → Save
-4. L'app sarà disponibile su: `https://tuousername.github.io/ciliegio-social-agent/CiliegioPR.html`
+1. Carica `CiliegioSocialMedia.html` e `README.md` nella root del repo
+2. Vai su **Settings → Pages → Branch: main → / (root)** → Save
+3. L'app sarà disponibile su: `https://tuousername.github.io/CiliegioSocialMedia/CiliegioSocialMedia.html`
 
 ---
 
-## 🔑 Configurazione API Key Anthropic
+## 🔑 Configurazione API Keys
 
-**Non inserire mai la API key direttamente nel codice HTML.**
+**Non inserire mai le API key direttamente nel codice HTML.**
 
-### Metodo consigliato: GitHub Secrets + GitHub Actions
+### GitHub Secrets (consigliato)
 
-Se vuoi che la chiave venga iniettata al build:
+Vai su **Settings → Secrets and variables → Actions → New repository secret**
 
-1. Vai su **Settings → Secrets and variables → Actions → New repository secret**
-2. Nome: `ANTHROPIC_API_KEY`
-3. Valore: la tua chiave `sk-ant-...`
+| Nome Secret | Descrizione |
+|---|---|
+| `ANTHROPIC_API_KEY` | API key Anthropic (`sk-ant-...`) |
+| `GOOGLE_SHEETS_API_KEY` | API key Google Sheets (`AIza...`) |
 
-### Metodo semplice: impostazioni in-app
+### Metodo alternativo: impostazioni in-app
 
-Per uso personale, inserisci la API key direttamente dalla sezione **Impostazioni** dell'app. Viene salvata nel `localStorage` del browser — non nel codice.
-
-> ⚠️ Il localStorage è specifico per ogni browser/dispositivo. Per usare la stessa chiave su più PC, inseriscila nelle impostazioni su ogni browser la prima volta.
+Inserisci le API key dalla sezione **Impostazioni** dell'app — vengono salvate nel `localStorage` del browser, su ogni dispositivo la prima volta.
 
 ---
 
-## 🗄️ Google Drive (sincronizzazione piano editoriale)
+## 📊 Google Sheets — Setup
 
-Per sincronizzare il piano editoriale su tutti i dispositivi tramite Google Drive:
+Il piano editoriale viene sincronizzato su Google Sheets (foglio `CiliegioSocialMedia`).
 
-1. Vai su [Google Cloud Console](https://console.cloud.google.com)
-2. Crea un nuovo progetto (es. `ciliegio-social`)
-3. Abilita **Google Drive API**
-4. Crea credenziali **OAuth 2.0** (tipo: Web application)
-5. Aggiungi l'URL di GitHub Pages agli **Authorized redirect URIs**
-6. Inserisci il **Client ID** e la **Folder ID** nella sezione Impostazioni dell'app
+### 1. Prepara il foglio
 
-> Guida dettagliata in arrivo con v1.1.0
+Apri il foglio Google: https://docs.google.com/spreadsheets/d/1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck
+
+Crea **due schede** nel foglio:
+- `Piano` — conterrà il piano editoriale
+- `Impostazioni` — conterrà le impostazioni dell'app
+
+### 2. Abilita Sheets API su Google Cloud
+
+1. Vai su [console.cloud.google.com](https://console.cloud.google.com)
+2. Crea progetto `CiliegioPR`
+3. **APIs & Services → Library** → cerca **Google Sheets API** → Abilita
+4. **APIs & Services → Credentials → + Create Credentials → API Key**
+5. Copia la chiave (`AIza...`)
+6. (Opzionale ma consigliato) Clicca sulla chiave → **API restrictions** → limita a "Google Sheets API"
+
+### 3. Configura nell'app
+
+1. Vai su **Impostazioni → Google Sheets**
+2. Incolla la `AIza...` key
+3. L'ID foglio è già preimpostato: `1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck`
+4. Clicca **Salva** poi **Inizializza foglio** (solo la prima volta)
+
+Da quel momento:
+- Ogni modifica ai post viene salvata automaticamente su Sheets
+- Puoi caricare il piano da qualsiasi PC con **☁️ Carica da Sheets**
+- Puoi modificare il piano direttamente nel foglio Google e ricaricare nell'app
 
 ---
 
@@ -62,40 +80,41 @@ Per pubblicare e schedulare direttamente su FB e IG:
    - `pages_read_engagement`
    - `instagram_content_publish`
    - `instagram_basic`
-5. Inserisci il token nella sezione **Impostazioni → Meta** dell'app
+5. Inserisci il token in **Impostazioni → Meta**
 
 ---
 
 ## 📋 Sistema di versioning
 
-Ogni release viene registrata nel blocco `VERSIONS` in cima al file `CiliegioPR.html`. Le versioni archiviate non vengono mai eliminate — sono visibili cliccando il badge versione nella sidebar.
+Ogni release viene registrata nell'array `VERSIONS` in cima al file JS. Le versioni archiviate non vengono mai eliminate — visibili cliccando il badge versione nella sidebar.
 
 ### Come rilasciare una nuova versione
 
 1. Apporta le modifiche al file
-2. Aggiungi in cima all'array `VERSIONS` nel JS:
+2. Aggiungi in cima all'array `VERSIONS`:
 ```javascript
 {
-  version: '1.1.0',
+  version: '1.2.0',
   date: '2025-XX-XX',
   current: true,
   description: 'Descrizione delle modifiche...'
 },
 ```
-3. Cambia il campo `current: false` sulla versione precedente
+3. Cambia `current: false` sulla versione precedente
 4. Aggiorna il commento `<!-- VERSION MANIFEST -->` in cima al file
-5. Commit e push su GitHub
+5. Copia la versione vecchia in `archive/CiliegioSocialMedia_v1.1.0.html`
+6. Commit e push
 
 ---
 
 ## 🏗️ Struttura del progetto
 
 ```
-ciliegio-social-agent/
-├── CiliegioPR.html      ← App principale (tutto in un file)
-├── README.md            ← Questo file
-└── archive/             ← Versioni precedenti (opzionale)
-    └── CiliegioPR_v1.0.0.html
+CiliegioSocialMedia/
+├── CiliegioSocialMedia.html   ← App principale
+├── README.md                  ← Questo file
+└── archive/                   ← Versioni precedenti
+    └── CiliegioSocialMedia_v1.0.0.html
 ```
 
 ---
@@ -109,4 +128,4 @@ ciliegio-social-agent/
 
 ---
 
-*Sviluppato con Claude — Anthropic*
+*Sviluppato con Claude — Anthropic | v1.1.0*

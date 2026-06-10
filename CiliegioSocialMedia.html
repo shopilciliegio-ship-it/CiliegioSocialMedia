@@ -3,9 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Il Ciliegio — Social PR Agent</title>
+<title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.1.0 — 2025-06-10 — Sincronizzazione Google Sheets: lettura/scrittura piano editoriale,
+                         salvataggio contenuti generati, sync automatica multi-dispositivo.
+                         Rinomina file in CiliegioSocialMedia.html. Sheet ID configurabile
+                         da impostazioni. Supporto GOOGLE_SHEETS_API_KEY via GitHub Secret.
   v1.0.0 — 2025-06-10 — Prima release: piano editoriale, generatore contenuti FB+IG,
                          pilastri tematici, stagionalità, integrazione API Anthropic,
                          struttura Google Drive ready, sistema versioning con archivio.
@@ -386,23 +390,37 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.0.0',
+    version: '1.1.0',
     date: '2025-06-10',
     current: true,
+    description: 'Sincronizzazione Google Sheets: lettura e scrittura del piano editoriale su foglio condiviso, salvataggio contenuti generati, sync automatica multi-dispositivo. Rinomina in CiliegioSocialMedia.html. Sheet ID e API key configurabili da Impostazioni.'
+  },
+  {
+    version: '1.0.0',
+    date: '2025-06-10',
+    current: false,
     description: 'Prima release: piano editoriale annuale, generatore contenuti FB+IG con API Anthropic, pilastri tematici e stagionalità, format post, struttura Google Drive ready, sistema versioning con archivio.'
   }
-  /* Le versioni precedenti vengono aggiunte qui automaticamente
-     quando si rilascia una nuova versione — non eliminare mai
-     voci esistenti, solo aggiungere in cima. */
 ];
 
 const APP_VERSION = VERSIONS.find(v => v.current).version;
+
+/* ═══════════════════════════════════════════════
+   GOOGLE SHEETS CONFIG
+   Sheet ID: 1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck
+   API Key:  impostata da Settings → salvata in localStorage
+             oppure iniettata da GitHub Secret (GOOGLE_SHEETS_API_KEY)
+═══════════════════════════════════════════════ */
+const SHEET_ID_DEFAULT = '1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck';
+const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
 const STATE = {
   apiKey: '',
+  sheetsApiKey: '',
+  sheetId: SHEET_ID_DEFAULT,
   driveConnected: false,
   driveFolderId: '',
   currentView: 'calendar',
@@ -452,9 +470,11 @@ function loadFromStorage() {
     const saved = localStorage.getItem('ciliegio_state');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed.apiKey)    STATE.apiKey = parsed.apiKey;
-      if (parsed.settings)  Object.assign(STATE.settings, parsed.settings);
-      if (parsed.posts)     STATE.posts = parsed.posts;
+      if (parsed.apiKey)       STATE.apiKey = parsed.apiKey;
+      if (parsed.sheetsApiKey) STATE.sheetsApiKey = parsed.sheetsApiKey;
+      if (parsed.sheetId)      STATE.sheetId = parsed.sheetId;
+      if (parsed.settings)     Object.assign(STATE.settings, parsed.settings);
+      if (parsed.posts)        STATE.posts = parsed.posts;
       if (parsed.driveConnected) STATE.driveConnected = parsed.driveConnected;
       if (parsed.driveFolderId)  STATE.driveFolderId = parsed.driveFolderId;
     }
@@ -464,11 +484,13 @@ function loadFromStorage() {
 function saveToStorage() {
   try {
     localStorage.setItem('ciliegio_state', JSON.stringify({
-      apiKey: STATE.apiKey,
-      settings: STATE.settings,
-      posts: STATE.posts,
+      apiKey:       STATE.apiKey,
+      sheetsApiKey: STATE.sheetsApiKey,
+      sheetId:      STATE.sheetId,
+      settings:     STATE.settings,
+      posts:        STATE.posts,
       driveConnected: STATE.driveConnected,
-      driveFolderId: STATE.driveFolderId
+      driveFolderId:  STATE.driveFolderId
     }));
   } catch(e) {}
 }
@@ -484,7 +506,13 @@ function checkApiStatus() {
     label.textContent = 'API key non configurata';
   }
   const driveLabel = document.getElementById('drive-label');
-  driveLabel.textContent = STATE.driveConnected ? 'Drive connesso ✓' : 'Drive non connesso';
+  if (STATE.sheetsApiKey && STATE.sheetsApiKey.startsWith('AIza')) {
+    driveLabel.textContent = '📊 Sheets connesso ✓';
+    STATE.driveConnected = true;
+  } else {
+    driveLabel.textContent = '📊 Sheets non configurato';
+    STATE.driveConnected = false;
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -501,6 +529,8 @@ const VIEW_TITLES = {
 
 const VIEW_ACTIONS = {
   calendar: `
+    <button class="btn sm" onclick="loadFromSheets()" title="Carica piano da Google Sheets">☁️ Carica da Sheets</button>
+    <button class="btn sm" onclick="syncToSheets()" title="Salva piano su Google Sheets">💾 Salva su Sheets</button>
     <button class="btn sm" onclick="addPostModal()">＋ Nuovo post</button>
     <button class="btn sm primary" onclick="generateFullPlan()">✨ Genera piano annuale</button>
   `,
@@ -795,8 +825,9 @@ function editOutput(platform) {
 }
 
 function saveGeneratedToPost() {
-  showToast('💾 Contenuto salvato nel piano editoriale');
   saveToStorage();
+  showToast('💾 Contenuto salvato in locale');
+  if (STATE.sheetsApiKey) syncToSheets();
 }
 
 function scheduleGenerated() {
@@ -961,6 +992,29 @@ function renderSettings() {
     </div>
 
     <div class="settings-section">
+      <div class="settings-title">📊 Google Sheets</div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Sheets API Key (AIza...)</label>
+        <input type="password" id="s-sheetskey" placeholder="AIzaSy..." value="${STATE.sheetsApiKey}" autocomplete="off">
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Sheet ID</label>
+        <input id="s-sheetid" value="${STATE.sheetId}" placeholder="ID del foglio Google">
+      </div>
+      <div style="font-size:12px; color:var(--text3); margin-bottom:14px; line-height:1.6">
+        💡 GitHub Secret: <code>GOOGLE_SHEETS_API_KEY</code><br>
+        📋 Il foglio deve avere due schede: <strong>Piano</strong> e <strong>Impostazioni</strong><br>
+        ⚠️ Prima di usare Sheets, clicca <em>Inizializza foglio</em> per creare la struttura corretta.
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn primary sm" onclick="saveSheetsSettings()">Salva configurazione Sheets</button>
+        <button class="btn sm" onclick="initSheetsStructure()">🔧 Inizializza foglio</button>
+        <button class="btn sm" onclick="syncToSheets()">☁️ Sincronizza ora</button>
+        <button class="btn sm" onclick="loadFromSheets()">⬇️ Carica da Sheets</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-title">🏢 Profilo azienda</div>
       <div class="form-grid">
         <div class="form-group"><label>Nome azienda</label><input id="s-name" value="${STATE.settings.companyName}"></div>
@@ -997,19 +1051,6 @@ function renderSettings() {
       </div>
       <button class="btn primary sm" onclick="saveMetaSettings()">Salva credenziali Meta</button>
     </div>
-
-    <div class="settings-section">
-      <div class="settings-title">🗄️ Google Drive</div>
-      <div style="font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:12px">
-        Il piano editoriale viene salvato come file JSON su Google Drive. Per attivare la sincronizzazione hai bisogno di un <strong>Google Cloud Project</strong> con Drive API abilitata.
-      </div>
-      <div class="form-group" style="margin-bottom:12px">
-        <label>Drive Folder ID (opzionale)</label>
-        <input id="s-driveid" placeholder="Incolla l'ID della cartella Drive" value="${STATE.driveFolderId}">
-      </div>
-      <button class="btn sm" onclick="saveDriveSettings()">Salva configurazione Drive</button>
-      <span style="font-size:12px; color:var(--text3); margin-left:10px">Google Cloud setup → guida in arrivo</span>
-    </div>
   `;
 }
 
@@ -1017,7 +1058,15 @@ function saveApiKey() {
   STATE.apiKey = document.getElementById('s-apikey').value.trim();
   saveToStorage();
   checkApiStatus();
-  showToast(STATE.apiKey ? '✅ API key salvata!' : '⚠️ API key rimossa');
+  showToast(STATE.apiKey ? '✅ API key Anthropic salvata!' : '⚠️ API key rimossa');
+}
+
+function saveSheetsSettings() {
+  STATE.sheetsApiKey = document.getElementById('s-sheetskey').value.trim();
+  STATE.sheetId      = document.getElementById('s-sheetid').value.trim() || SHEET_ID_DEFAULT;
+  saveToStorage();
+  checkApiStatus();
+  showToast(STATE.sheetsApiKey ? '✅ Sheets configurato! Clicca "Inizializza foglio" se è la prima volta.' : '⚠️ Sheets API key rimossa');
 }
 
 function saveSettings() {
@@ -1035,13 +1084,6 @@ function saveMetaSettings() {
   STATE.settings.metaToken = document.getElementById('s-metatoken').value.trim();
   saveToStorage();
   showToast('✅ Credenziali Meta salvate');
-}
-
-function saveDriveSettings() {
-  STATE.driveFolderId = document.getElementById('s-driveid').value.trim();
-  saveToStorage();
-  checkApiStatus();
-  showToast('✅ Configurazione Drive salvata');
 }
 
 /* ═══════════════════════════════════════════════
@@ -1096,6 +1138,7 @@ function savePostDetail(id) {
   closeModalDirect();
   showView('calendar');
   showToast('✅ Post aggiornato');
+  if (STATE.sheetsApiKey) syncToSheets();
 }
 
 function deletePost(id) {
@@ -1211,6 +1254,154 @@ function showVersions() {
       Ogni nuova versione viene aggiunta in cima a questo registro. Le versioni precedenti vengono archiviate automaticamente e non vengono mai eliminate.
     </div>
   `);
+}
+
+/* ═══════════════════════════════════════════════
+   GOOGLE SHEETS SYNC
+   Struttura foglio "Piano" (riga 1 = intestazioni):
+   A=id | B=month | C=date | D=title | E=desc | F=pillar
+   G=platforms | H=status | I=fbText | J=igText
+
+   Struttura foglio "Settings":
+   A=key | B=value
+═══════════════════════════════════════════════ */
+
+async function sheetsGet(range) {
+  const key = STATE.sheetsApiKey;
+  const id  = STATE.sheetId;
+  if (!key || !id) throw new Error('Sheets non configurato');
+  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}?key=${key}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Sheets API error: ${r.status}`);
+  return r.json();
+}
+
+async function sheetsUpdate(range, values) {
+  const key = STATE.sheetsApiKey;
+  const id  = STATE.sheetId;
+  if (!key || !id) throw new Error('Sheets non configurato');
+  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}?valueInputOption=RAW&key=${key}`;
+  const r = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+  });
+  if (!r.ok) throw new Error(`Sheets write error: ${r.status}`);
+  return r.json();
+}
+
+async function sheetsAppend(range, values) {
+  const key = STATE.sheetsApiKey;
+  const id  = STATE.sheetId;
+  if (!key || !id) throw new Error('Sheets non configurato');
+  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&key=${key}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+  });
+  if (!r.ok) throw new Error(`Sheets append error: ${r.status}`);
+  return r.json();
+}
+
+async function sheetsClear(range) {
+  const key = STATE.sheetsApiKey;
+  const id  = STATE.sheetId;
+  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}:clear?key=${key}`;
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  if (!r.ok) throw new Error(`Sheets clear error: ${r.status}`);
+  return r.json();
+}
+
+function postToRow(p) {
+  return [
+    p.id, p.month, p.date, p.title, p.desc,
+    p.pillar, p.platforms.join(','), p.status,
+    p.fbText || '', p.igText || ''
+  ];
+}
+
+function rowToPost(row) {
+  if (!row || !row[0]) return null;
+  return {
+    id:        row[0] || '',
+    month:     row[1] || '',
+    date:      row[2] || '',
+    title:     row[3] || '',
+    desc:      row[4] || '',
+    pillar:    row[5] || 'vino',
+    platforms: (row[6] || 'fb,ig').split(',').filter(Boolean),
+    status:    row[7] || 'draft',
+    fbText:    row[8] || '',
+    igText:    row[9] || ''
+  };
+}
+
+async function syncToSheets() {
+  if (!STATE.sheetsApiKey) {
+    showToast('⚠️ Configura prima la Sheets API key in Impostazioni');
+    return false;
+  }
+  try {
+    showToast('⏳ Sincronizzazione in corso...');
+    // Intestazioni + dati
+    const header = [['id','month','date','title','desc','pillar','platforms','status','fbText','igText']];
+    const rows   = STATE.posts.map(postToRow);
+    await sheetsClear('Piano!A:J');
+    await sheetsUpdate('Piano!A1', header);
+    if (rows.length > 0) {
+      await sheetsUpdate(`Piano!A2`, rows);
+    }
+    showToast('✅ Piano sincronizzato su Google Sheets!');
+    return true;
+  } catch(err) {
+    showToast('❌ Errore Sheets: ' + err.message);
+    console.error(err);
+    return false;
+  }
+}
+
+async function loadFromSheets() {
+  if (!STATE.sheetsApiKey) {
+    showToast('⚠️ Configura prima la Sheets API key in Impostazioni');
+    return false;
+  }
+  try {
+    showToast('⏳ Caricamento da Google Sheets...');
+    const data = await sheetsGet('Piano!A2:J500');
+    const rows = data.values || [];
+    if (rows.length === 0) {
+      showToast('ℹ️ Foglio vuoto — caricati i dati di default');
+      return false;
+    }
+    STATE.posts = rows.map(rowToPost).filter(Boolean);
+    saveToStorage();
+    showView(STATE.currentView);
+    showToast(`✅ Caricati ${STATE.posts.length} post da Sheets!`);
+    return true;
+  } catch(err) {
+    showToast('❌ Errore caricamento Sheets: ' + err.message);
+    console.error(err);
+    return false;
+  }
+}
+
+async function initSheetsStructure() {
+  if (!STATE.sheetsApiKey) {
+    showToast('⚠️ Inserisci prima la Sheets API key');
+    return;
+  }
+  try {
+    showToast('⏳ Inizializzazione foglio...');
+    const header = [['id','month','date','title','desc','pillar','platforms','status','fbText','igText']];
+    await sheetsUpdate('Piano!A1', header);
+    const settingsHeader = [['key','value'],['companyName', STATE.settings.companyName],['version', APP_VERSION]];
+    await sheetsUpdate('Impostazioni!A1', settingsHeader);
+    await syncToSheets();
+    showToast('✅ Foglio inizializzato e dati caricati!');
+  } catch(err) {
+    showToast('❌ ' + err.message + ' — assicurati che il foglio abbia i fogli "Piano" e "Impostazioni"');
+  }
 }
 
 /* ═══════════════════════════════════════════════
