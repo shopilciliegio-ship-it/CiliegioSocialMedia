@@ -6,13 +6,15 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
-  v1.1.0 — 2025-06-10 — Sincronizzazione Google Sheets: lettura/scrittura piano editoriale,
-                         salvataggio contenuti generati, sync automatica multi-dispositivo.
-                         Rinomina file in CiliegioSocialMedia.html. Sheet ID configurabile
-                         da impostazioni. Supporto GOOGLE_SHEETS_API_KEY via GitHub Secret.
+  v1.2.0 — 2025-06-10 — Sincronizzazione Dropbox: lettura/scrittura piano editoriale
+                         su /IlCiliegio/SocialMedia/piano.json, salvataggio automatico
+                         ad ogni modifica, caricamento multi-dispositivo. Sostituisce
+                         Google Sheets (rimosso). DROPBOX_ACCESS_TOKEN via GitHub Secret.
+  v1.1.0 — 2025-06-10 — Sincronizzazione Google Sheets (rimossa per limiti API).
+                         Rinomina file in CiliegioSocialMedia.html.
   v1.0.0 — 2025-06-10 — Prima release: piano editoriale, generatore contenuti FB+IG,
                          pilastri tematici, stagionalità, integrazione API Anthropic,
-                         struttura Google Drive ready, sistema versioning con archivio.
+                         sistema versioning con archivio.
 -->
 
 <style>
@@ -390,39 +392,44 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.1.0',
+    version: '1.2.0',
     date: '2025-06-10',
     current: true,
-    description: 'Sincronizzazione Google Sheets: lettura e scrittura del piano editoriale su foglio condiviso, salvataggio contenuti generati, sync automatica multi-dispositivo. Rinomina in CiliegioSocialMedia.html. Sheet ID e API key configurabili da Impostazioni.'
+    description: 'Sincronizzazione Dropbox: salvataggio e caricamento del piano editoriale su /IlCiliegio/SocialMedia/piano.json. La cartella viene creata automaticamente. Salvataggio automatico ad ogni modifica. Sostituisce Google Sheets.'
+  },
+  {
+    version: '1.1.0',
+    date: '2025-06-10',
+    current: false,
+    description: 'Tentativo sincronizzazione Google Sheets — rimosso per limiti API (scrittura bloccata senza OAuth). Rinomina file in CiliegioSocialMedia.html.'
   },
   {
     version: '1.0.0',
     date: '2025-06-10',
     current: false,
-    description: 'Prima release: piano editoriale annuale, generatore contenuti FB+IG con API Anthropic, pilastri tematici e stagionalità, format post, struttura Google Drive ready, sistema versioning con archivio.'
+    description: 'Prima release: piano editoriale annuale, generatore contenuti FB+IG con API Anthropic, pilastri tematici e stagionalità, format post, sistema versioning con archivio.'
   }
 ];
 
 const APP_VERSION = VERSIONS.find(v => v.current).version;
 
 /* ═══════════════════════════════════════════════
-   GOOGLE SHEETS CONFIG
-   Sheet ID: 1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck
-   API Key:  impostata da Settings → salvata in localStorage
-             oppure iniettata da GitHub Secret (GOOGLE_SHEETS_API_KEY)
+   DROPBOX CONFIG
+   File: /IlCiliegio/SocialMedia/piano.json
+   Token: impostato da Settings → salvato in localStorage
+          oppure iniettato da GitHub Secret (DROPBOX_ACCESS_TOKEN)
 ═══════════════════════════════════════════════ */
-const SHEET_ID_DEFAULT = '1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck';
-const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+const DROPBOX_FILE_PATH = '/IlCiliegio/SocialMedia/piano.json';
+const DROPBOX_API       = 'https://api.dropboxapi.com/2';
+const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 
 /* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
 const STATE = {
   apiKey: '',
-  sheetsApiKey: '',
-  sheetId: SHEET_ID_DEFAULT,
-  driveConnected: false,
-  driveFolderId: '',
+  dropboxToken: '',
+  dropboxConnected: false,
   currentView: 'calendar',
   posts: getDefaultPosts(),
   settings: {
@@ -471,12 +478,9 @@ function loadFromStorage() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.apiKey)       STATE.apiKey = parsed.apiKey;
-      if (parsed.sheetsApiKey) STATE.sheetsApiKey = parsed.sheetsApiKey;
-      if (parsed.sheetId)      STATE.sheetId = parsed.sheetId;
+      if (parsed.dropboxToken) STATE.dropboxToken = parsed.dropboxToken;
       if (parsed.settings)     Object.assign(STATE.settings, parsed.settings);
       if (parsed.posts)        STATE.posts = parsed.posts;
-      if (parsed.driveConnected) STATE.driveConnected = parsed.driveConnected;
-      if (parsed.driveFolderId)  STATE.driveFolderId = parsed.driveFolderId;
     }
   } catch(e) {}
 }
@@ -485,12 +489,9 @@ function saveToStorage() {
   try {
     localStorage.setItem('ciliegio_state', JSON.stringify({
       apiKey:       STATE.apiKey,
-      sheetsApiKey: STATE.sheetsApiKey,
-      sheetId:      STATE.sheetId,
+      dropboxToken: STATE.dropboxToken,
       settings:     STATE.settings,
-      posts:        STATE.posts,
-      driveConnected: STATE.driveConnected,
-      driveFolderId:  STATE.driveFolderId
+      posts:        STATE.posts
     }));
   } catch(e) {}
 }
@@ -506,12 +507,12 @@ function checkApiStatus() {
     label.textContent = 'API key non configurata';
   }
   const driveLabel = document.getElementById('drive-label');
-  if (STATE.sheetsApiKey && STATE.sheetsApiKey.startsWith('AIza')) {
-    driveLabel.textContent = '📊 Sheets connesso ✓';
-    STATE.driveConnected = true;
+  if (STATE.dropboxToken) {
+    driveLabel.textContent = '📦 Dropbox connesso ✓';
+    STATE.dropboxConnected = true;
   } else {
-    driveLabel.textContent = '📊 Sheets non configurato';
-    STATE.driveConnected = false;
+    driveLabel.textContent = '📦 Dropbox non configurato';
+    STATE.dropboxConnected = false;
   }
 }
 
@@ -529,8 +530,8 @@ const VIEW_TITLES = {
 
 const VIEW_ACTIONS = {
   calendar: `
-    <button class="btn sm" onclick="loadFromSheets()" title="Carica piano da Google Sheets">☁️ Carica da Sheets</button>
-    <button class="btn sm" onclick="syncToSheets()" title="Salva piano su Google Sheets">💾 Salva su Sheets</button>
+    <button class="btn sm" onclick="loadFromDropbox()" title="Carica piano da Dropbox">📦 Carica da Dropbox</button>
+    <button class="btn sm" onclick="saveToDropbox()" title="Salva piano su Dropbox">💾 Salva su Dropbox</button>
     <button class="btn sm" onclick="addPostModal()">＋ Nuovo post</button>
     <button class="btn sm primary" onclick="generateFullPlan()">✨ Genera piano annuale</button>
   `,
@@ -825,9 +826,8 @@ function editOutput(platform) {
 }
 
 function saveGeneratedToPost() {
-  saveToStorage();
-  showToast('💾 Contenuto salvato in locale');
-  if (STATE.sheetsApiKey) syncToSheets();
+  showToast('💾 Salvataggio in corso...');
+  autoSync();
 }
 
 function scheduleGenerated() {
@@ -992,25 +992,20 @@ function renderSettings() {
     </div>
 
     <div class="settings-section">
-      <div class="settings-title">📊 Google Sheets</div>
+      <div class="settings-title">📦 Dropbox</div>
       <div class="form-group" style="margin-bottom:12px">
-        <label>Sheets API Key (AIza...)</label>
-        <input type="password" id="s-sheetskey" placeholder="AIzaSy..." value="${STATE.sheetsApiKey}" autocomplete="off">
-      </div>
-      <div class="form-group" style="margin-bottom:12px">
-        <label>Sheet ID</label>
-        <input id="s-sheetid" value="${STATE.sheetId}" placeholder="ID del foglio Google">
+        <label>Access Token</label>
+        <input type="password" id="s-dropboxtoken" placeholder="Token lungo generato su dropbox.com/developers" value="${STATE.dropboxToken}" autocomplete="off">
       </div>
       <div style="font-size:12px; color:var(--text3); margin-bottom:14px; line-height:1.6">
-        💡 GitHub Secret: <code>GOOGLE_SHEETS_API_KEY</code><br>
-        📋 Il foglio deve avere due schede: <strong>Piano</strong> e <strong>Impostazioni</strong><br>
-        ⚠️ Prima di usare Sheets, clicca <em>Inizializza foglio</em> per creare la struttura corretta.
+        💡 GitHub Secret: <code>DROPBOX_ACCESS_TOKEN</code><br>
+        📁 Il piano verrà salvato in: <code>/IlCiliegio/SocialMedia/piano.json</code><br>
+        🔄 La cartella viene creata automaticamente al primo salvataggio.
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button class="btn primary sm" onclick="saveSheetsSettings()">Salva configurazione Sheets</button>
-        <button class="btn sm" onclick="initSheetsStructure()">🔧 Inizializza foglio</button>
-        <button class="btn sm" onclick="syncToSheets()">☁️ Sincronizza ora</button>
-        <button class="btn sm" onclick="loadFromSheets()">⬇️ Carica da Sheets</button>
+        <button class="btn primary sm" onclick="saveDropboxSettings()">Salva token Dropbox</button>
+        <button class="btn sm" onclick="saveToDropbox()">☁️ Salva su Dropbox</button>
+        <button class="btn sm" onclick="loadFromDropbox()">⬇️ Carica da Dropbox</button>
       </div>
     </div>
 
@@ -1061,12 +1056,11 @@ function saveApiKey() {
   showToast(STATE.apiKey ? '✅ API key Anthropic salvata!' : '⚠️ API key rimossa');
 }
 
-function saveSheetsSettings() {
-  STATE.sheetsApiKey = document.getElementById('s-sheetskey').value.trim();
-  STATE.sheetId      = document.getElementById('s-sheetid').value.trim() || SHEET_ID_DEFAULT;
+function saveDropboxSettings() {
+  STATE.dropboxToken = document.getElementById('s-dropboxtoken').value.trim();
   saveToStorage();
   checkApiStatus();
-  showToast(STATE.sheetsApiKey ? '✅ Sheets configurato! Clicca "Inizializza foglio" se è la prima volta.' : '⚠️ Sheets API key rimossa');
+  showToast(STATE.dropboxToken ? '✅ Token Dropbox salvato! Clicca "Salva su Dropbox" per il primo sync.' : '⚠️ Token Dropbox rimosso');
 }
 
 function saveSettings() {
@@ -1134,20 +1128,19 @@ function savePostDetail(id) {
   p.status = document.getElementById('pd-status').value;
   p.fbText = document.getElementById('pd-fb').value;
   p.igText = document.getElementById('pd-ig').value;
-  saveToStorage();
   closeModalDirect();
   showView('calendar');
   showToast('✅ Post aggiornato');
-  if (STATE.sheetsApiKey) syncToSheets();
+  autoSync();
 }
 
 function deletePost(id) {
   if (!confirm('Eliminare questo post dal piano?')) return;
   STATE.posts = STATE.posts.filter(x => x.id !== id);
-  saveToStorage();
   closeModalDirect();
   showView('calendar');
   showToast('🗑 Post eliminato');
+  autoSync();
 }
 
 async function generateForPost(id) {
@@ -1222,10 +1215,10 @@ function saveNewPost() {
     desc:   document.getElementById('np-desc').value,
     platforms
   });
-  saveToStorage();
   closeModalDirect();
   showView('calendar');
   showToast('✅ Post aggiunto al piano');
+  autoSync();
 }
 
 /* ═══════════════════════════════════════════════
@@ -1257,151 +1250,91 @@ function showVersions() {
 }
 
 /* ═══════════════════════════════════════════════
-   GOOGLE SHEETS SYNC
-   Struttura foglio "Piano" (riga 1 = intestazioni):
-   A=id | B=month | C=date | D=title | E=desc | F=pillar
-   G=platforms | H=status | I=fbText | J=igText
-
-   Struttura foglio "Settings":
-   A=key | B=value
+   DROPBOX SYNC
+   Salva/carica piano.json su /IlCiliegio/SocialMedia/
 ═══════════════════════════════════════════════ */
 
-async function sheetsGet(range) {
-  const key = STATE.sheetsApiKey;
-  const id  = STATE.sheetId;
-  if (!key || !id) throw new Error('Sheets non configurato');
-  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}?key=${key}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Sheets API error: ${r.status}`);
-  return r.json();
-}
-
-async function sheetsUpdate(range, values) {
-  const key = STATE.sheetsApiKey;
-  const id  = STATE.sheetId;
-  if (!key || !id) throw new Error('Sheets non configurato');
-  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}?valueInputOption=RAW&key=${key}`;
-  const r = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range, majorDimension: 'ROWS', values })
-  });
-  if (!r.ok) throw new Error(`Sheets write error: ${r.status}`);
-  return r.json();
-}
-
-async function sheetsAppend(range, values) {
-  const key = STATE.sheetsApiKey;
-  const id  = STATE.sheetId;
-  if (!key || !id) throw new Error('Sheets non configurato');
-  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&key=${key}`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range, majorDimension: 'ROWS', values })
-  });
-  if (!r.ok) throw new Error(`Sheets append error: ${r.status}`);
-  return r.json();
-}
-
-async function sheetsClear(range) {
-  const key = STATE.sheetsApiKey;
-  const id  = STATE.sheetId;
-  const url = `${SHEETS_BASE}/${id}/values/${encodeURIComponent(range)}:clear?key=${key}`;
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-  if (!r.ok) throw new Error(`Sheets clear error: ${r.status}`);
-  return r.json();
-}
-
-function postToRow(p) {
-  return [
-    p.id, p.month, p.date, p.title, p.desc,
-    p.pillar, p.platforms.join(','), p.status,
-    p.fbText || '', p.igText || ''
-  ];
-}
-
-function rowToPost(row) {
-  if (!row || !row[0]) return null;
-  return {
-    id:        row[0] || '',
-    month:     row[1] || '',
-    date:      row[2] || '',
-    title:     row[3] || '',
-    desc:      row[4] || '',
-    pillar:    row[5] || 'vino',
-    platforms: (row[6] || 'fb,ig').split(',').filter(Boolean),
-    status:    row[7] || 'draft',
-    fbText:    row[8] || '',
-    igText:    row[9] || ''
-  };
-}
-
-async function syncToSheets() {
-  if (!STATE.sheetsApiKey) {
-    showToast('⚠️ Configura prima la Sheets API key in Impostazioni');
+async function saveToDropbox() {
+  if (!STATE.dropboxToken) {
+    showToast('⚠️ Configura prima il token Dropbox in Impostazioni');
+    showView('settings');
     return false;
   }
   try {
-    showToast('⏳ Sincronizzazione in corso...');
-    // Intestazioni + dati
-    const header = [['id','month','date','title','desc','pillar','platforms','status','fbText','igText']];
-    const rows   = STATE.posts.map(postToRow);
-    await sheetsClear('Piano!A:J');
-    await sheetsUpdate('Piano!A1', header);
-    if (rows.length > 0) {
-      await sheetsUpdate(`Piano!A2`, rows);
+    showToast('⏳ Salvataggio su Dropbox...');
+    const payload = {
+      posts:    STATE.posts,
+      settings: STATE.settings,
+      version:  APP_VERSION,
+      lastSaved: new Date().toISOString()
+    };
+    const response = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization':   `Bearer ${STATE.dropboxToken}`,
+        'Content-Type':    'application/octet-stream',
+        'Dropbox-API-Arg': JSON.stringify({
+          path: DROPBOX_FILE_PATH,
+          mode: 'overwrite',
+          autorename: false,
+          mute: true
+        })
+      },
+      body: JSON.stringify(payload, null, 2)
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error_summary || response.status);
     }
-    showToast('✅ Piano sincronizzato su Google Sheets!');
+    showToast('✅ Piano salvato su Dropbox!');
     return true;
   } catch(err) {
-    showToast('❌ Errore Sheets: ' + err.message);
+    showToast('❌ Errore Dropbox: ' + err.message);
     console.error(err);
     return false;
   }
 }
 
-async function loadFromSheets() {
-  if (!STATE.sheetsApiKey) {
-    showToast('⚠️ Configura prima la Sheets API key in Impostazioni');
+async function loadFromDropbox() {
+  if (!STATE.dropboxToken) {
+    showToast('⚠️ Configura prima il token Dropbox in Impostazioni');
+    showView('settings');
     return false;
   }
   try {
-    showToast('⏳ Caricamento da Google Sheets...');
-    const data = await sheetsGet('Piano!A2:J500');
-    const rows = data.values || [];
-    if (rows.length === 0) {
-      showToast('ℹ️ Foglio vuoto — caricati i dati di default');
-      return false;
+    showToast('⏳ Caricamento da Dropbox...');
+    const response = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+      method: 'POST',
+      headers: {
+        'Authorization':   `Bearer ${STATE.dropboxToken}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_FILE_PATH })
+      }
+    });
+    if (response.status === 409) {
+      // File non esiste ancora — salva quello corrente
+      showToast('ℹ️ File non trovato su Dropbox — creo il piano iniziale...');
+      await saveToDropbox();
+      return true;
     }
-    STATE.posts = rows.map(rowToPost).filter(Boolean);
+    if (!response.ok) throw new Error('Errore HTTP ' + response.status);
+    const data = await response.json();
+    if (data.posts)    STATE.posts    = data.posts;
+    if (data.settings) Object.assign(STATE.settings, data.settings);
     saveToStorage();
     showView(STATE.currentView);
-    showToast(`✅ Caricati ${STATE.posts.length} post da Sheets!`);
+    showToast(`✅ Caricati ${STATE.posts.length} post da Dropbox!`);
     return true;
   } catch(err) {
-    showToast('❌ Errore caricamento Sheets: ' + err.message);
+    showToast('❌ Errore caricamento: ' + err.message);
     console.error(err);
     return false;
   }
 }
 
-async function initSheetsStructure() {
-  if (!STATE.sheetsApiKey) {
-    showToast('⚠️ Inserisci prima la Sheets API key');
-    return;
-  }
-  try {
-    showToast('⏳ Inizializzazione foglio...');
-    const header = [['id','month','date','title','desc','pillar','platforms','status','fbText','igText']];
-    await sheetsUpdate('Piano!A1', header);
-    const settingsHeader = [['key','value'],['companyName', STATE.settings.companyName],['version', APP_VERSION]];
-    await sheetsUpdate('Impostazioni!A1', settingsHeader);
-    await syncToSheets();
-    showToast('✅ Foglio inizializzato e dati caricati!');
-  } catch(err) {
-    showToast('❌ ' + err.message + ' — assicurati che il foglio abbia i fogli "Piano" e "Impostazioni"');
-  }
+// Chiamata automatica dopo ogni modifica se Dropbox è configurato
+async function autoSync() {
+  saveToStorage();
+  if (STATE.dropboxToken) await saveToDropbox();
 }
 
 /* ═══════════════════════════════════════════════

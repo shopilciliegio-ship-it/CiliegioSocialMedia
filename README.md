@@ -2,7 +2,7 @@
 
 Agente editoriale autonomo per la gestione dei social media (Facebook e Instagram) dell'Azienda Agricola Il Ciliegio di Monteriggioni, Siena.
 
-## Versione attuale: v1.1.0
+## Versione attuale: v1.2.0
 
 ---
 
@@ -18,53 +18,40 @@ Agente editoriale autonomo per la gestione dei social media (Facebook e Instagra
 
 **Non inserire mai le API key direttamente nel codice HTML.**
 
-### GitHub Secrets (consigliato)
+### GitHub Secrets
 
 Vai su **Settings → Secrets and variables → Actions → New repository secret**
 
 | Nome Secret | Descrizione |
 |---|---|
 | `ANTHROPIC_API_KEY` | API key Anthropic (`sk-ant-...`) |
-| `GOOGLE_SHEETS_API_KEY` | API key Google Sheets (`AIza...`) |
+| `DROPBOX_ACCESS_TOKEN` | Token Dropbox (generato su dropbox.com/developers) |
 
 ### Metodo alternativo: impostazioni in-app
 
-Inserisci le API key dalla sezione **Impostazioni** dell'app — vengono salvate nel `localStorage` del browser, su ogni dispositivo la prima volta.
+Inserisci le chiavi dalla sezione **Impostazioni** dell'app — vengono salvate nel `localStorage` del browser. Su ogni nuovo dispositivo le inserisci una volta sola.
 
 ---
 
-## 📊 Google Sheets — Setup
+## 📦 Dropbox — Sincronizzazione piano editoriale
 
-Il piano editoriale viene sincronizzato su Google Sheets (foglio `CiliegioSocialMedia`).
+Il piano editoriale viene salvato come file JSON su Dropbox:
+```
+/IlCiliegio/SocialMedia/piano.json
+```
+La cartella viene creata automaticamente al primo salvataggio.
 
-### 1. Prepara il foglio
+### Setup Dropbox (5 minuti)
 
-Apri il foglio Google: https://docs.google.com/spreadsheets/d/1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck
+1. Vai su [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps)
+2. **Create app** → Scoped access → Full Dropbox
+3. Nome: `CiliegioPR`
+4. Tab **Settings → OAuth 2 → Generated access token** → clicca **Generate**
+5. Copia il token e salvalo come GitHub Secret `DROPBOX_ACCESS_TOKEN`
+6. Nell'app: **Impostazioni → Dropbox** → incolla il token → **Salva**
+7. Clicca **☁️ Salva su Dropbox** per il primo salvataggio
 
-Crea **due schede** nel foglio:
-- `Piano` — conterrà il piano editoriale
-- `Impostazioni` — conterrà le impostazioni dell'app
-
-### 2. Abilita Sheets API su Google Cloud
-
-1. Vai su [console.cloud.google.com](https://console.cloud.google.com)
-2. Crea progetto `CiliegioPR`
-3. **APIs & Services → Library** → cerca **Google Sheets API** → Abilita
-4. **APIs & Services → Credentials → + Create Credentials → API Key**
-5. Copia la chiave (`AIza...`)
-6. (Opzionale ma consigliato) Clicca sulla chiave → **API restrictions** → limita a "Google Sheets API"
-
-### 3. Configura nell'app
-
-1. Vai su **Impostazioni → Google Sheets**
-2. Incolla la `AIza...` key
-3. L'ID foglio è già preimpostato: `1LNLG-bft89Bf3LnZstj_-7YCXIEE_TfdJa9oRFbn8ck`
-4. Clicca **Salva** poi **Inizializza foglio** (solo la prima volta)
-
-Da quel momento:
-- Ogni modifica ai post viene salvata automaticamente su Sheets
-- Puoi caricare il piano da qualsiasi PC con **☁️ Carica da Sheets**
-- Puoi modificare il piano direttamente nel foglio Google e ricaricare nell'app
+Da quel momento ogni modifica viene salvata automaticamente su Dropbox e puoi caricare il piano da qualsiasi dispositivo con **⬇️ Carica da Dropbox**.
 
 ---
 
@@ -86,23 +73,23 @@ Per pubblicare e schedulare direttamente su FB e IG:
 
 ## 📋 Sistema di versioning
 
-Ogni release viene registrata nell'array `VERSIONS` in cima al file JS. Le versioni archiviate non vengono mai eliminate — visibili cliccando il badge versione nella sidebar.
+Ogni release viene registrata nell'array `VERSIONS` nel file JS. Visibili cliccando il badge versione nella sidebar.
 
 ### Come rilasciare una nuova versione
 
-1. Apporta le modifiche al file
+1. Apporta le modifiche
 2. Aggiungi in cima all'array `VERSIONS`:
 ```javascript
 {
-  version: '1.2.0',
+  version: '1.3.0',
   date: '2025-XX-XX',
   current: true,
-  description: 'Descrizione delle modifiche...'
+  description: 'Descrizione modifiche...'
 },
 ```
 3. Cambia `current: false` sulla versione precedente
 4. Aggiorna il commento `<!-- VERSION MANIFEST -->` in cima al file
-5. Copia la versione vecchia in `archive/CiliegioSocialMedia_v1.1.0.html`
+5. Copia la versione vecchia in `archive/CiliegioSocialMedia_v1.2.0.html`
 6. Commit e push
 
 ---
@@ -114,7 +101,8 @@ CiliegioSocialMedia/
 ├── CiliegioSocialMedia.html   ← App principale
 ├── README.md                  ← Questo file
 └── archive/                   ← Versioni precedenti
-    └── CiliegioSocialMedia_v1.0.0.html
+    ├── CiliegioSocialMedia_v1.0.0.html
+    └── CiliegioSocialMedia_v1.1.0.html
 ```
 
 ---
@@ -128,4 +116,4 @@ CiliegioSocialMedia/
 
 ---
 
-*Sviluppato con Claude — Anthropic | v1.1.0*
+*Sviluppato con Claude — Anthropic | v1.2.0*
