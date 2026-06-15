@@ -6,6 +6,10 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.7.3 — 2025-06-15 — Pulizia automatica dei vecchi post placeholder (p1-p15) del
+                         piano editoriale originale anche dagli stati già salvati in
+                         localStorage e su Dropbox, per eliminare i post doppi e il
+                         "vecchio piano" che riappariva dopo il caricamento.
   v1.7.2 — 2025-06-15 — Dropbox: la connessione OAuth richiede ora esplicitamente gli
                          scope 'files.content.write' e 'files.content.read'. Necessario
                          disconnettere e riconnettere Dropbox da Impostazioni perché il
@@ -433,9 +437,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.7.2',
+    version: '1.7.3',
     date: '2025-06-15',
     current: true,
+    description: 'Rimozione automatica dei vecchi post placeholder (p1-p15) del piano editoriale originale da localStorage e Dropbox, per eliminare i post doppi e il "vecchio piano" che tornava visibile dopo il caricamento.'
+  },
+  {
+    version: '1.7.2',
+    date: '2025-06-15',
+    current: false,
     description: 'Dropbox: la connessione OAuth richiede ora esplicitamente gli scope files.content.write e files.content.read. Disconnetti e riconnetti Dropbox da Impostazioni per ottenere un nuovo refresh token con questi permessi.'
   },
   {
@@ -671,12 +681,24 @@ function getDefaultPosts() {
   return [];
 }
 
+// Vecchi post placeholder (piano editoriale originale, p1-p15) salvati in
+// localStorage/Dropbox prima della pulizia v1.6.0: vanno rimossi anche dagli
+// stati già sincronizzati, altrimenti riappaiono al caricamento.
+const LEGACY_PLACEHOLDER_IDS = ['p1','p2','p3','p4','p5','p6','p7','p8','p9','p10','p11','p12','p13','p14','p15'];
+
+function removeLegacyPlaceholders() {
+  const before = STATE.posts.length;
+  STATE.posts = STATE.posts.filter(p => !LEGACY_PLACEHOLDER_IDS.includes(p.id));
+  return STATE.posts.length !== before;
+}
+
 /* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
 window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('versionBadge').textContent = `📋 v${APP_VERSION}`;
   loadFromStorage();
+  if (removeLegacyPlaceholders()) await autoSync();
   await handleDropboxRedirect();
   showView('calendar');
   checkApiStatus();
@@ -1724,7 +1746,9 @@ async function loadFromDropbox() {
     if (data.posts)    STATE.posts    = data.posts;
     if (data.recurringPosts) STATE.recurringPosts = data.recurringPosts;
     if (data.settings) Object.assign(STATE.settings, data.settings);
+    const cleaned = removeLegacyPlaceholders();
     saveToStorage();
+    if (cleaned) await saveToDropbox();
     showView(STATE.currentView);
     showToast(`✅ Caricati ${STATE.posts.length} post da Dropbox!`);
     return true;
