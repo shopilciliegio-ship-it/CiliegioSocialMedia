@@ -6,6 +6,11 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.6.0 — 2025-06-15 — Pulizia piano editoriale originale: rimossi gli ultimi post
+                         placeholder (piatto/prodotto/eventi generici), il piano "extra"
+                         parte vuoto e si popola solo con "+ Nuovo post". Rimossa
+                         l'opzione "Giugno 2025" (ormai nel passato) dai menu di
+                         generazione e nuovo post.
   v1.5.0 — 2025-06-15 — "Genera testi del mese": genera con l'AI i testi FB/IG di tutti
                          i post (piano + ricorrenti) del mese visualizzato, in base a
                          titolo/descrizione anche modificati. I reminder del menù del
@@ -416,9 +421,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.5.0',
+    version: '1.6.0',
     date: '2025-06-15',
     current: true,
+    description: 'Pulizia del piano editoriale originale: rimossi gli ultimi post placeholder, il piano "extra" (oltre ai contenuti ricorrenti) parte vuoto e si popola solo aggiungendo manualmente nuovi post. Rimossa l\'opzione "Giugno 2025", ormai nel passato, dai menu di generazione e nuovo post.'
+  },
+  {
+    version: '1.5.0',
+    date: '2025-06-15',
+    current: false,
     description: '"Genera testi del mese" sostituisce il vecchio stub: crea con l\'AI i testi FB/IG di tutti i post (piano + ricorrenti) del mese in vista, usando titolo/descrizione anche modificati. I reminder del menù del lunedì ruotano tra 4 tagli/aperture diversi per evitare post ripetitivi.'
   },
   {
@@ -619,20 +630,9 @@ const STATE = {
 };
 
 function getDefaultPosts() {
-  return [
-    { id:'p4', month:'Luglio 2025', date:'5 lug', title:'Visita guidata in cantina', desc:'Invito all\'esperienza con prenotazione diretta WhatsApp', pillar:'azienda', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p5', month:'Luglio 2025', date:'19 lug', title:'Shop online: spedizioni estive attive', desc:'Promozione shop — vino e olio consegnati in tutta Italia', pillar:'shop', platforms:['fb'], status:'draft', fbText:'', igText:'' },
-    { id:'p6', month:'Agosto 2025', date:'9 ago', title:'Ferragosto in agriturismo', desc:'Menù speciale e prenotazioni per Ferragosto — posti limitati', pillar:'ristorante', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p7', month:'Agosto 2025', date:'23 ago', title:'I cereali antichi del Ciliegio', desc:'Storytelling sulla produzione di farro, orzo e grani antichi', pillar:'shop', platforms:['ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p8', month:'Settembre 2025', date:'6 set', title:'Inizia la vendemmia!', desc:'Il momento più atteso dell\'anno — invito a viverlo con noi', pillar:'vino', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p9', month:'Settembre 2025', date:'20 set', title:'Chianti Classico: il nostro blend', desc:'Racconto del carattere del vino e dell\'annata in corso', pillar:'vino', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p10', month:'Ottobre 2025', date:'11 ott', title:'Raccolta delle olive', desc:'Il profumo del nuovo olio EVO — dietro le quinte della raccolta', pillar:'olio', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p11', month:'Ottobre 2025', date:'25 ott', title:'Degustazione autunnale', desc:'Vino nuovo e piatti di stagione — evento speciale', pillar:'azienda', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p12', month:'Novembre 2025', date:'8 nov', title:'Nuovo olio: prima spremitura', desc:'Disponibile in vendita diretta e shop online', pillar:'olio', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p13', month:'Novembre 2025', date:'22 nov', title:'Regali di Natale dal Ciliegio', desc:'Confezioni regalo vino + olio — ordini entro il 10 dicembre', pillar:'shop', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p14', month:'Dicembre 2025', date:'6 dic', title:'Pacchi natalizi artigianali', desc:'Tutto il sapore del Chianti in una confezione regalo', pillar:'shop', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-    { id:'p15', month:'Dicembre 2025', date:'20 dic', title:'Auguri di Natale', desc:'Post augurale con foto della famiglia Pattaro e dell\'azienda', pillar:'azienda', platforms:['fb','ig'], status:'draft', fbText:'', igText:'' },
-  ];
+  // Piano editoriale "extra" (oltre ai contenuti ricorrenti): vuoto, da popolare
+  // con "＋ Nuovo post" man mano che si decidono iniziative specifiche.
+  return [];
 }
 
 /* ═══════════════════════════════════════════════
@@ -748,7 +748,7 @@ function renderCalendar() {
 
   let html = `
     <div class="stats-row">
-      <div class="stat-card"><div class="stat-label">Post pianificati</div><div class="stat-value">${total}</div><div class="stat-sub">Lug – Dic 2025</div></div>
+      <div class="stat-card"><div class="stat-label">Post pianificati</div><div class="stat-value">${total}</div><div class="stat-sub">Oltre ai ricorrenti</div></div>
       <div class="stat-card"><div class="stat-label">Pronti</div><div class="stat-value" style="color:var(--green)">${ready}</div><div class="stat-sub">Contenuto generato</div></div>
       <div class="stat-card"><div class="stat-label">Schedulati</div><div class="stat-value" style="color:var(--blue)">${sched}</div><div class="stat-sub">Pronti per Meta</div></div>
       <div class="stat-card"><div class="stat-label">Da completare</div><div class="stat-value" style="color:var(--amber)">${draft}</div><div class="stat-sub">In bozza</div></div>
@@ -885,7 +885,6 @@ function renderGenerate() {
         <div class="form-group">
           <label>Mese di pubblicazione</label>
           <select id="gen-month">
-            <option>Giugno 2025</option>
             <option>Luglio 2025</option>
             <option>Agosto 2025</option>
             <option>Settembre 2025 – Vendemmia</option>
@@ -1414,7 +1413,7 @@ function addPostModal() {
       <div class="form-group">
         <label>Mese</label>
         <select id="np-month">
-          <option>Giugno 2025</option><option>Luglio 2025</option><option>Agosto 2025</option>
+          <option>Luglio 2025</option><option>Agosto 2025</option>
           <option>Settembre 2025</option><option>Ottobre 2025</option><option>Novembre 2025</option><option>Dicembre 2025</option>
         </select>
       </div>
