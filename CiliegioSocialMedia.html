@@ -6,6 +6,9 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.7.1 — 2025-06-15 — Dropbox: gli errori di salvataggio/caricamento mostrano ora il
+                         messaggio dettagliato restituito da Dropbox (error_summary),
+                         per capire la causa reale di eventuali errori HTTP 400/409.
   v1.7.0 — 2025-06-15 — Dropbox con OAuth2 + PKCE: niente più token da incollare a mano
                          (scadevano dopo 4 ore e davano errore 401). Si collega una sola
                          volta da Impostazioni con "Connetti con Dropbox"; da quel
@@ -426,9 +429,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.7.0',
+    version: '1.7.1',
     date: '2025-06-15',
     current: true,
+    description: 'Dropbox: gli errori di salvataggio/caricamento mostrano ora il messaggio dettagliato di Dropbox (error_summary), per diagnosticare la causa reale di eventuali errori HTTP 400/409.'
+  },
+  {
+    version: '1.7.0',
+    date: '2025-06-15',
+    current: false,
     description: 'Dropbox con OAuth2 + PKCE: il token manuale (scadeva dopo 4 ore causando errori 401) è sostituito da una connessione una tantum da Impostazioni ("Connetti con Dropbox"). Da quel momento l\'access token si rinnova automaticamente ad ogni salvataggio/caricamento.'
   },
   {
@@ -1659,8 +1668,10 @@ async function saveToDropbox() {
       body: JSON.stringify(payload, null, 2)
     });
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error_summary || response.status);
+      const text = await response.text();
+      let msg = text;
+      try { msg = JSON.parse(text).error_summary || text; } catch(e) {}
+      throw new Error(`HTTP ${response.status}: ${msg}`);
     }
     showToast('✅ Piano salvato su Dropbox!');
     return true;
@@ -1693,7 +1704,12 @@ async function loadFromDropbox() {
       await saveToDropbox();
       return true;
     }
-    if (!response.ok) throw new Error('Errore HTTP ' + response.status);
+    if (!response.ok) {
+      const text = await response.text();
+      let msg = text;
+      try { msg = JSON.parse(text).error_summary || text; } catch(e) {}
+      throw new Error(`HTTP ${response.status}: ${msg}`);
+    }
     const data = await response.json();
     if (data.posts)    STATE.posts    = data.posts;
     if (data.recurringPosts) STATE.recurringPosts = data.recurringPosts;
