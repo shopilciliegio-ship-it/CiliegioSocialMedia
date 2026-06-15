@@ -6,6 +6,10 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.7.2 — 2025-06-15 — Dropbox: la connessione OAuth richiede ora esplicitamente gli
+                         scope 'files.content.write' e 'files.content.read'. Necessario
+                         disconnettere e riconnettere Dropbox da Impostazioni perché il
+                         refresh token precedente non aveva questi permessi.
   v1.7.1 — 2025-06-15 — Dropbox: gli errori di salvataggio/caricamento mostrano ora il
                          messaggio dettagliato restituito da Dropbox (error_summary),
                          per capire la causa reale di eventuali errori HTTP 400/409.
@@ -429,9 +433,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.7.1',
+    version: '1.7.2',
     date: '2025-06-15',
     current: true,
+    description: 'Dropbox: la connessione OAuth richiede ora esplicitamente gli scope files.content.write e files.content.read. Disconnetti e riconnetti Dropbox da Impostazioni per ottenere un nuovo refresh token con questi permessi.'
+  },
+  {
+    version: '1.7.1',
+    date: '2025-06-15',
+    current: false,
     description: 'Dropbox: gli errori di salvataggio/caricamento mostrano ora il messaggio dettagliato di Dropbox (error_summary), per diagnosticare la causa reale di eventuali errori HTTP 400/409.'
   },
   {
@@ -1777,6 +1787,7 @@ async function connectDropbox() {
     code_challenge: challenge,
     code_challenge_method: 'S256',
     token_access_type: 'offline',
+    scope: 'files.content.write files.content.read',
     redirect_uri: dropboxRedirectUri()
   });
   location.href = `${DROPBOX_AUTH_URL}?${params.toString()}`;
