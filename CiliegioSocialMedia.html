@@ -6,6 +6,9 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.9.0 — 2025-06-15 — Nuovo bottone "📄 Esporta TXT" nel calendario: scarica un file di
+                         testo con data e titolo di tutti i post (piano + ricorrenti) in
+                         ordine cronologico, comodo da condividere o stampare.
   v1.8.0 — 2025-06-15 — Le linee guida di "📐 Format post" (struttura, lunghezze, emoji,
                          CTA, hashtag) vengono ora passate all'AI in ogni generazione di
                          testi, così restano vincolanti. Aggiunto in Impostazioni un campo
@@ -443,9 +446,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.8.0',
+    version: '1.9.0',
     date: '2025-06-15',
     current: true,
+    description: 'Nuovo bottone "Esporta TXT" nel calendario: scarica un file di testo con data e titolo di tutti i post (piano + ricorrenti) in ordine cronologico, da condividere o stampare facilmente.'
+  },
+  {
+    version: '1.8.0',
+    date: '2025-06-15',
+    current: false,
     description: 'Le linee guida della pagina "Format post" vengono ora incluse in ogni prompt AI (struttura, lunghezze, emoji, CTA, hashtag). Nuovo campo Impostazioni "Post di riferimento (stile)" per incollare esempi di post FB/IG pubblicati, usati come riferimento di tono/voce.'
   },
   {
@@ -785,6 +794,7 @@ const VIEW_ACTIONS = {
   calendar: `
     <button class="btn sm" onclick="loadFromDropbox()" title="Carica piano da Dropbox">📦 Carica da Dropbox</button>
     <button class="btn sm" onclick="saveToDropbox()" title="Salva piano su Dropbox">💾 Salva su Dropbox</button>
+    <button class="btn sm" onclick="exportPlanTxt()" title="Esporta elenco date e post in un file di testo">📄 Esporta TXT</button>
     <button class="btn sm" onclick="addPostModal()">＋ Nuovo post</button>
     <button class="btn sm primary" onclick="generateMonthContent()">✨ Genera testi del mese</button>
   `,
@@ -911,6 +921,37 @@ function showDayDetail(year, month, day) {
   const dow = (new Date(year, month, day).getDay() + 6) % 7;
   const title = `${WEEKDAY_NAMES_IT[dow]} ${day} ${MONTH_NAMES_IT[month]} ${year}`;
   openModal(title, posts.map(p => renderPostRow(p)).join('') || '<div class="empty-state">Nessun post programmato per questo giorno.</div>');
+}
+
+// Esporta un riepilogo testuale (data + soggetto) di tutto il piano,
+// in ordine cronologico, da condividere facilmente (es. via WhatsApp/email).
+function exportPlanTxt() {
+  const allPosts = [...STATE.posts, ...STATE.recurringPosts];
+  const items = allPosts
+    .map(p => ({ post: p, d: parsePostDate(p) }))
+    .filter(x => x.d)
+    .sort((a, b) => (a.d.year - b.d.year) || (a.d.month - b.d.month) || (a.d.day - b.d.day));
+
+  if (!items.length) {
+    showToast('ℹ️ Nessun post da esportare');
+    return;
+  }
+
+  const lines = items.map(({ post, d }) => {
+    const dow = (new Date(d.year, d.month, d.day).getDay() + 6) % 7;
+    const dateLabel = `${WEEKDAY_NAMES_IT[dow]} ${d.day} ${MONTH_NAMES_IT[d.month]} ${d.year}`;
+    return `${dateLabel} — ${post.title}`;
+  });
+
+  const text = `Piano editoriale — Il Ciliegio\n${'='.repeat(32)}\n\n${lines.join('\n')}\n`;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'piano_editoriale_il_ciliegio.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ File TXT esportato!');
 }
 
 function renderPostRow(p) {
