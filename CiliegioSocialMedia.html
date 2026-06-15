@@ -6,6 +6,12 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.8.0 — 2025-06-15 — Le linee guida di "📐 Format post" (struttura, lunghezze, emoji,
+                         CTA, hashtag) vengono ora passate all'AI in ogni generazione di
+                         testi, così restano vincolanti. Aggiunto in Impostazioni un campo
+                         "Post di riferimento (stile)" dove incollare esempi di post
+                         FB/IG già pubblicati: l'AI li userà come riferimento di tono e
+                         voce (senza copiarne i contenuti).
   v1.7.3 — 2025-06-15 — Pulizia automatica dei vecchi post placeholder (p1-p15) del
                          piano editoriale originale anche dagli stati già salvati in
                          localStorage e su Dropbox, per eliminare i post doppi e il
@@ -437,9 +443,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '1.7.3',
+    version: '1.8.0',
     date: '2025-06-15',
     current: true,
+    description: 'Le linee guida della pagina "Format post" vengono ora incluse in ogni prompt AI (struttura, lunghezze, emoji, CTA, hashtag). Nuovo campo Impostazioni "Post di riferimento (stile)" per incollare esempi di post FB/IG pubblicati, usati come riferimento di tono/voce.'
+  },
+  {
+    version: '1.7.3',
+    date: '2025-06-15',
+    current: false,
     description: 'Rimozione automatica dei vecchi post placeholder (p1-p15) del piano editoriale originale da localStorage e Dropbox, per eliminare i post doppi e il "vecchio piano" che tornava visibile dopo il caricamento.'
   },
   {
@@ -669,6 +681,7 @@ const STATE = {
     location: 'Monteriggioni, Siena – Chianti',
     tone: 'Caldo e familiare',
     language: 'Italiano',
+    styleExamples: '',
     fbPage: '',
     igAccount: '',
     metaToken: ''
@@ -1024,6 +1037,36 @@ function renderGenerate() {
 ═══════════════════════════════════════════════ */
 const BUSINESS_INTRO = `Sei il social media manager dell'Azienda Agricola Il Ciliegio di Monteriggioni (Siena), nel cuore del Chianti. L'azienda è a conduzione familiare, fondata nel 1952. Produce e vende vino (Chianti Classico), olio EVO, cereali antichi, farine, legumi, distillati e dolci. Ha un ristorante con cucina tipica toscana e un agriturismo didattico. Sito: www.ilciliegio.com | WhatsApp prenotazioni: 329/1767348 | Shop: shop@ilciliegio.com`;
 
+// Linee guida di formato (vedi anche la pagina "📐 Format post" in app):
+// vengono passate all'AI per ogni generazione, così le regole restano
+// vincolanti e basta modificarle qui per cambiare anche l'output.
+const FORMAT_GUIDELINES = `LINEE GUIDA DI FORMATO — rispettale per entrambi i testi:
+
+Facebook:
+- Lunghezza 150-250 parole
+- Struttura: hook emozionale → storytelling → dettaglio prodotto/servizio → call to action
+- 3-5 emoji integrate nel testo
+- CTA tipo "Prenota il tuo tavolo →", "Ordina online", "Scrivici su WhatsApp"
+- Link: www.ilciliegio.com oppure wa.me/393291767348
+- 3-5 hashtag rilevanti in fondo al testo
+
+Instagram:
+- Lunghezza 80-120 parole (caption concisa)
+- Struttura: prima riga d'impatto (compare nel feed) → 2-3 frasi evocative → call to action → hashtag separati
+- Emoji più abbondanti, visive e atmosferiche
+- 15-20 hashtag pertinenti (mix popolare + di nicchia), separati dal testo
+- Se utile, rimanda alle stories per i contenuti dietro le quinte`;
+
+// Costruisce il blocco di contesto stilistico da appendere ai prompt:
+// linee guida di formato + eventuali post di riferimento incollati in Impostazioni.
+function buildStyleContext() {
+  let ctx = FORMAT_GUIDELINES;
+  if (STATE.settings.styleExamples && STATE.settings.styleExamples.trim()) {
+    ctx += `\n\nESEMPI DI POST DI RIFERIMENTO (stile e tono a cui ispirarsi, non copiare i contenuti):\n${STATE.settings.styleExamples.trim()}`;
+  }
+  return ctx;
+}
+
 async function callClaude(prompt, maxTokens = 1000) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -1068,6 +1111,8 @@ async function generateContent() {
 
   const prompt = `${BUSINESS_INTRO}
 
+${buildStyleContext()}
+
 Devi creare due versioni di post social per il pilastro "${pillar}", da pubblicare in "${month}".
 Tono: ${tone}
 Obiettivo: ${goal}
@@ -1075,8 +1120,8 @@ ${extra ? 'Dettagli aggiuntivi: ' + extra : ''}
 
 Rispondi ESCLUSIVAMENTE in JSON con questo formato (nessun testo fuori dal JSON):
 {
-  "facebook": "testo completo per Facebook — narrativo, 150-250 parole, con emoji appropriati, call to action chiara, link al sito o WhatsApp dove pertinente",
-  "instagram": "testo per Instagram — conciso 80-120 parole, visivo ed evocativo, emoji, 15-20 hashtag rilevanti alla fine separati da newline"
+  "facebook": "testo completo per Facebook",
+  "instagram": "testo per Instagram"
 }`;
 
   try {
@@ -1331,6 +1376,13 @@ function renderSettings() {
           </select>
         </div>
       </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Post di riferimento (stile)</label>
+        <textarea id="s-styleexamples" rows="5" placeholder="Incolla qui 1-3 post pubblicati su FB/IG di cui ti piace lo stile — l'AI li userà come riferimento di tono e voce (non copierà i contenuti)">${STATE.settings.styleExamples || ''}</textarea>
+      </div>
+      <div style="font-size:12px; color:var(--text3); margin-bottom:12px; line-height:1.6">
+        💡 Le linee guida della pagina "📐 Format post" e questi esempi vengono inclusi automaticamente in ogni generazione AI.
+      </div>
       <button class="btn primary sm" onclick="saveSettings()">Salva impostazioni</button>
     </div>
 
@@ -1364,12 +1416,14 @@ function saveDropboxSettings() {
 }
 
 function saveSettings() {
-  STATE.settings.companyName = document.getElementById('s-name').value;
-  STATE.settings.location    = document.getElementById('s-location').value;
-  STATE.settings.tone        = document.getElementById('s-tone').value;
-  STATE.settings.language    = document.getElementById('s-lang').value;
+  STATE.settings.companyName    = document.getElementById('s-name').value;
+  STATE.settings.location       = document.getElementById('s-location').value;
+  STATE.settings.tone           = document.getElementById('s-tone').value;
+  STATE.settings.language       = document.getElementById('s-lang').value;
+  STATE.settings.styleExamples  = document.getElementById('s-styleexamples').value;
   saveToStorage();
   showToast('✅ Impostazioni salvate');
+  autoSync();
 }
 
 function saveMetaSettings() {
@@ -1597,13 +1651,15 @@ async function generateReminderBatch(reminders, monthLabel) {
 
   const prompt = `${BUSINESS_INTRO}
 
+${buildStyleContext()}
+
 Devi scrivere ${reminders.length} post "Reminder: menù della settimana" per ${monthLabel}, uno per ciascuna di queste date:
 ${items}
 
-Ogni post annuncia che il menù della settimana è online e invita a scoprirlo/prenotare. Per evitare che sembrino tutti uguali, usa per ciascun post il "taglio" indicato — variando frase d'apertura, struttura e dettagli, ma mantenendo lo stile ${STATE.settings.tone}.
+Ogni post annuncia che il menù della settimana è online e invita a scoprirlo/prenotare. Per evitare che sembrino tutti uguali, usa per ciascun post il "taglio" indicato — variando frase d'apertura, struttura e dettagli, ma mantenendo lo stile ${STATE.settings.tone} e rispettando le linee guida di formato sopra.
 
 Rispondi ESCLUSIVAMENTE in JSON con un array di ${reminders.length} oggetti, nello stesso ordine delle date sopra, formato:
-[{ "facebook": "testo per Facebook 100-180 parole con emoji e CTA", "instagram": "testo per Instagram 60-100 parole con emoji e 8-12 hashtag" }, ...]`;
+[{ "facebook": "testo per Facebook", "instagram": "testo per Instagram" }, ...]`;
 
   const maxTokens = Math.min(4000, 600 * reminders.length + 200);
   const arr = await callClaude(prompt, maxTokens);
@@ -1625,6 +1681,8 @@ async function generateSinglePost(p) {
   const hint = FORMAT_HINTS[p.format] || '';
   const prompt = `${BUSINESS_INTRO}
 
+${buildStyleContext()}
+
 Crea due versioni di post social per "${p.title}".
 Descrizione/contesto: ${p.desc}
 ${hint}
@@ -1632,8 +1690,8 @@ Tono: ${STATE.settings.tone}
 
 Rispondi ESCLUSIVAMENTE in JSON con questo formato (nessun testo fuori dal JSON):
 {
-  "facebook": "testo completo per Facebook — narrativo, 150-250 parole, con emoji appropriati, call to action chiara, link al sito o WhatsApp dove pertinente",
-  "instagram": "testo per Instagram — conciso 80-120 parole, visivo ed evocativo, emoji, 15-20 hashtag rilevanti alla fine separati da newline"
+  "facebook": "testo completo per Facebook",
+  "instagram": "testo per Instagram"
 }`;
 
   const obj = await callClaude(prompt);
