@@ -25,7 +25,9 @@ Vai su **Settings → Secrets and variables → Actions → New repository secre
 | Nome Secret | Descrizione |
 |---|---|
 | `ANTHROPIC_API_KEY` | API key Anthropic (`sk-ant-...`) |
-| `DROPBOX_ACCESS_TOKEN` | Token Dropbox (generato su dropbox.com/developers) |
+
+La connessione Dropbox non usa più un secret: si autorizza una volta dall'app stessa
+(vedi sezione "Setup Dropbox" più sotto).
 
 ### Metodo alternativo: impostazioni in-app
 
@@ -41,17 +43,24 @@ Il piano editoriale viene salvato come file JSON su Dropbox:
 ```
 La cartella viene creata automaticamente al primo salvataggio.
 
-### Setup Dropbox (5 minuti)
+### Setup Dropbox (OAuth2 + PKCE — connessione una tantum)
+
+L'app non usa più un token incollato a mano (scadeva dopo 4 ore e dava errore 401).
+Si collega una sola volta via OAuth e poi rinnova da sola il token.
 
 1. Vai su [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps)
-2. **Create app** → Scoped access → Full Dropbox
-3. Nome: `CiliegioPR`
-4. Tab **Settings → OAuth 2 → Generated access token** → clicca **Generate**
-5. Copia il token e salvalo come GitHub Secret `DROPBOX_ACCESS_TOKEN`
-6. Nell'app: **Impostazioni → Dropbox** → incolla il token → **Salva**
-7. Clicca **☁️ Salva su Dropbox** per il primo salvataggio
+2. **Create app** → Scoped access → Full Dropbox → Nome: `CiliegioPR`
+3. Tab **Settings → OAuth 2 → Redirect URIs**: aggiungi l'URL esatto dove apri l'app, es.
+   `https://tuousername.github.io/CiliegioSocialMedia/CiliegioSocialMedia.html`
+4. Sempre in **Settings**, copia la **App key** (non serve l'App secret)
+5. Permessi (tab **Permissions**): assicurati che siano abilitati `files.content.write` e `files.content.read`, poi salva
+6. Nell'app: **Impostazioni → Dropbox** → incolla la App key → **Salva App Key**
+7. Clicca **🔗 Connetti con Dropbox**: si apre la pagina di autorizzazione Dropbox, conferma l'accesso
+8. Tornato nell'app vedrai "✓ Connesso" — clicca **☁️ Salva su Dropbox** per il primo salvataggio
 
-Da quel momento ogni modifica viene salvata automaticamente su Dropbox e puoi caricare il piano da qualsiasi dispositivo con **⬇️ Carica da Dropbox**.
+Da quel momento ogni modifica viene salvata automaticamente su Dropbox (l'access token si rinnova
+da solo) e puoi caricare il piano da qualsiasi dispositivo con **⬇️ Carica da Dropbox** (basta
+ripetere la connessione una volta su ogni nuovo dispositivo/browser).
 
 ---
 
