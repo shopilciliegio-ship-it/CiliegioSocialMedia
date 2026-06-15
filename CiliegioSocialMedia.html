@@ -6,6 +6,10 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v1.3.0 — 2025-06-15 — Contenuti ricorrenti: reminder menù del lunedì, piatto del mese,
+                         prodotto del mese e post tematico mensile (12 temi stagionali),
+                         generati automaticamente da luglio 2025 e gestiti in una sezione
+                         separata del calendario (non incidono sul piano editoriale base).
   v1.2.0 — 2025-06-10 — Sincronizzazione Dropbox: lettura/scrittura piano editoriale
                          su /IlCiliegio/SocialMedia/piano.json, salvataggio automatico
                          ad ogni modifica, caricamento multi-dispositivo. Sostituisce
@@ -166,6 +170,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .tag-ristorante{ background: var(--coral-light);  color: var(--coral); }
 .tag-shop      { background: var(--blue-light);   color: var(--blue); }
 .tag-azienda   { background: var(--purple-light); color: var(--purple); }
+.tag-reminder  { background: var(--surface2);     color: var(--text2); }
+.tag-piatto    { background: var(--coral-light);  color: var(--coral); }
+.tag-prodotto  { background: var(--blue-light);   color: var(--blue); }
+.tag-tematico  { background: var(--pink-light);   color: var(--pink); }
 
 .posts-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .post-row {
@@ -329,7 +337,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
           <div class="tagline">Social PR Agent</div>
         </div>
       </div>
-      <div class="version-badge" onclick="showVersions()" title="Clicca per vedere lo storico versioni">
+      <div class="version-badge" id="versionBadge" onclick="showVersions()" title="Clicca per vedere lo storico versioni">
         📋 v1.0.0
       </div>
     </div>
@@ -392,9 +400,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '1.3.0',
+    date: '2025-06-15',
+    current: true,
+    description: 'Contenuti ricorrenti: reminder menù del lunedì, piatto del mese, prodotto del mese e post tematico mensile (12 temi stagionali), generati automaticamente da luglio 2025 in una sezione separata del calendario.'
+  },
+  {
     version: '1.2.0',
     date: '2025-06-10',
-    current: true,
+    current: false,
     description: 'Sincronizzazione Dropbox: salvataggio e caricamento del piano editoriale su /IlCiliegio/SocialMedia/piano.json. La cartella viene creata automaticamente. Salvataggio automatico ad ogni modifica. Sostituisce Google Sheets.'
   },
   {
@@ -424,6 +438,108 @@ const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 
 /* ═══════════════════════════════════════════════
+   CONTENUTI RICORRENTI
+   Generati automaticamente da RECURRING_START a RECURRING_END:
+   - ogni lunedì: reminder menù della settimana
+   - 1° sabato disponibile del mese: piatto del mese (video)
+   - 2° sabato disponibile del mese: post tematico del mese
+   - 3° sabato disponibile del mese: prodotto del mese (scheda tecnica)
+   - eventuali sabati successivi: liberi (minipost spot)
+═══════════════════════════════════════════════ */
+const RECURRING_START = '2025-07-07';
+const RECURRING_END   = '2025-12-31';
+
+const MONTH_NAMES_IT  = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+const MONTH_SHORT_IT  = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+
+// 12 temi mensili ricorrenti, basati sul calendario agricolo/stagionale del Ciliegio
+const THEMATIC_PLAN = {
+  1:  { title: 'La cantina si ferma, il lavoro no',     desc: 'Potatura delle vigne e lavori invernali in campagna — racconto dietro le quinte fuori stagione', pillar: 'azienda' },
+  2:  { title: 'San Valentino al Ciliegio',              desc: 'Cena romantica nel ristorante, menù speciale per due, atmosfera invernale nel Chianti', pillar: 'ristorante' },
+  3:  { title: 'Risveglio della terra',                  desc: 'Primi lavori in vigna e nell\'orto, preparativi per la primavera, semina dei cereali antichi', pillar: 'azienda' },
+  4:  { title: 'Pasqua in agriturismo',                  desc: 'Menù pasquale tipico toscano (agnello, pici, torta pasqualina), invito a prenotare in famiglia', pillar: 'ristorante' },
+  5:  { title: 'Riapertura terrazza estiva',             desc: 'Foto panoramica sui vigneti al tramonto, primi aperitivi all\'aperto', pillar: 'ristorante' },
+  6:  { title: 'Estate nel Chianti',                     desc: 'Vita in agriturismo: passeggiate, degustazioni, relax tra i filari', pillar: 'azienda' },
+  7:  { title: 'Alta stagione: vivi l\'esperienza',      desc: 'Visite guidate in cantina, degustazioni guidate, esperienze per turisti e famiglie', pillar: 'azienda' },
+  8:  { title: 'Ferragosto in agriturismo',              desc: 'Evento/menù speciale di Ferragosto, posti limitati, atmosfera conviviale', pillar: 'ristorante' },
+  9:  { title: 'È iniziata la vendemmia!',               desc: 'Il momento più atteso dell\'anno — racconto della raccolta dell\'uva, squadra al lavoro', pillar: 'vino' },
+  10: { title: 'Raccolta delle olive',                   desc: 'Profumo dell\'olio nuovo, frantoio, dietro le quinte della molitura', pillar: 'olio' },
+  11: { title: 'Il nuovo olio è pronto',                 desc: 'Prima spremitura disponibile in vendita diretta e online, abbinamenti con i piatti del ristorante', pillar: 'olio' },
+  12: { title: 'Natale dal Ciliegio',                    desc: 'Cesti regalo con tutti i nostri prodotti (vino, olio, farine, legumi, dolci, distillati) e consegna a domicilio', pillar: 'shop' },
+};
+
+const RECURRING_TYPES = {
+  reminder: { icon: '📋', label: 'Reminder menù',   cls: 'tag-reminder' },
+  piatto:   { icon: '🎬', label: 'Piatto del mese',  cls: 'tag-piatto' },
+  prodotto: { icon: '📦', label: 'Prodotto del mese',cls: 'tag-prodotto' },
+  tematico: { icon: '📰', label: 'Post tematico',    cls: 'tag-tematico' },
+};
+
+function makeRecurringPost(type, date) {
+  const dateStr   = date.toISOString().slice(0,10);
+  const dateLabel = `${date.getDate()} ${MONTH_SHORT_IT[date.getMonth()]}`;
+  const monthName = `${MONTH_NAMES_IT[date.getMonth()]} ${date.getFullYear()}`;
+
+  let title, desc, pillar, platforms, format;
+  switch (type) {
+    case 'reminder':
+      title = 'Reminder: menù della settimana';
+      desc  = 'Pubblicare il menù della settimana (foto + elenco piatti) su Facebook e Instagram';
+      pillar = 'ristorante'; platforms = ['fb','ig']; format = 'reminder';
+      break;
+    case 'piatto':
+      title = 'Piatto del mese';
+      desc  = 'Video autoprodotto della preparazione del piatto del mese';
+      pillar = 'ristorante'; platforms = ['fb','ig']; format = 'video';
+      break;
+    case 'prodotto':
+      title = 'Prodotto del mese';
+      desc  = 'Scheda tecnica del prodotto del mese + abbinamenti (vino, farina, legumi...)';
+      pillar = 'shop'; platforms = ['fb','ig']; format = 'scheda-tecnica';
+      break;
+    case 'tematico': {
+      const t = THEMATIC_PLAN[date.getMonth() + 1];
+      title = t.title; desc = t.desc; pillar = t.pillar;
+      platforms = ['fb','ig']; format = 'tematico';
+      break;
+    }
+  }
+
+  return {
+    id: `r_${dateStr}_${type}`,
+    recurringType: type,
+    date: dateLabel,
+    month: monthName,
+    title, desc, pillar, platforms, format,
+    status: 'draft', fbText: '', igText: ''
+  };
+}
+
+function generateRecurringPosts() {
+  const posts = [];
+  const start = new Date(RECURRING_START + 'T00:00:00');
+  const end   = new Date(RECURRING_END   + 'T00:00:00');
+
+  for (let cursor = new Date(start); cursor <= end; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) {
+    const year  = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const monthFirstDay = (year === start.getFullYear() && month === start.getMonth()) ? start.getDate() : 1;
+    const monthLastDate = new Date(year, month + 1, 0);
+    const monthLastDay  = (monthLastDate > end) ? end.getDate() : monthLastDate.getDate();
+
+    const saturdays = [];
+    for (let day = monthFirstDay; day <= monthLastDay; day++) {
+      const d = new Date(year, month, day);
+      if (d.getDay() === 1) posts.push(makeRecurringPost('reminder', d)); // lunedì
+      if (d.getDay() === 6) saturdays.push(d);                            // sabato
+    }
+    const roles = ['piatto', 'tematico', 'prodotto'];
+    saturdays.slice(0, 3).forEach((d, i) => posts.push(makeRecurringPost(roles[i], d)));
+  }
+  return posts;
+}
+
+/* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
 const STATE = {
@@ -432,6 +548,7 @@ const STATE = {
   dropboxConnected: false,
   currentView: 'calendar',
   posts: getDefaultPosts(),
+  recurringPosts: generateRecurringPosts(),
   settings: {
     companyName: 'Società Agricola Il Ciliegio',
     location: 'Monteriggioni, Siena – Chianti',
@@ -467,6 +584,7 @@ function getDefaultPosts() {
    INIT
 ═══════════════════════════════════════════════ */
 window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('versionBadge').textContent = `📋 v${APP_VERSION}`;
   loadFromStorage();
   showView('calendar');
   checkApiStatus();
@@ -481,6 +599,7 @@ function loadFromStorage() {
       if (parsed.dropboxToken) STATE.dropboxToken = parsed.dropboxToken;
       if (parsed.settings)     Object.assign(STATE.settings, parsed.settings);
       if (parsed.posts)        STATE.posts = parsed.posts;
+      if (parsed.recurringPosts) STATE.recurringPosts = parsed.recurringPosts;
     }
   } catch(e) {}
 }
@@ -491,7 +610,8 @@ function saveToStorage() {
       apiKey:       STATE.apiKey,
       dropboxToken: STATE.dropboxToken,
       settings:     STATE.settings,
-      posts:        STATE.posts
+      posts:        STATE.posts,
+      recurringPosts: STATE.recurringPosts
     }));
   } catch(e) {}
 }
@@ -614,6 +734,49 @@ function renderCalendar() {
       </div>
     `;
   });
+
+  html += renderRecurringSection();
+  return html;
+}
+
+function renderRecurringSection() {
+  const recurring = STATE.recurringPosts;
+  const counts = { reminder:0, piatto:0, prodotto:0, tematico:0 };
+  recurring.forEach(p => counts[p.recurringType]++);
+
+  const byMonth = {};
+  recurring.forEach(p => {
+    if (!byMonth[p.month]) byMonth[p.month] = [];
+    byMonth[p.month].push(p);
+  });
+
+  let html = `
+    <div class="section-head" style="margin-top:8px">
+      <div class="section-title">📅 Contenuti ricorrenti — da luglio 2025</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Reminder menù</div><div class="stat-value">${counts.reminder}</div><div class="stat-sub">Ogni lunedì</div></div>
+      <div class="stat-card"><div class="stat-label">Piatto del mese</div><div class="stat-value">${counts.piatto}</div><div class="stat-sub">Video, 1°sabato</div></div>
+      <div class="stat-card"><div class="stat-label">Post tematico</div><div class="stat-value">${counts.tematico}</div><div class="stat-sub">2°sabato del mese</div></div>
+      <div class="stat-card"><div class="stat-label">Prodotto del mese</div><div class="stat-value">${counts.prodotto}</div><div class="stat-sub">Scheda tecnica, 3°sabato</div></div>
+    </div>
+  `;
+
+  Object.entries(byMonth).forEach(([month, posts]) => {
+    html += `
+      <div class="month-block">
+        <div class="month-header">
+          <div class="month-name">${month}</div>
+          <div class="month-meta">
+            <span style="font-size:12px; color:var(--text3)">${posts.length} contenuti ricorrenti</span>
+          </div>
+        </div>
+        <div class="posts-list">
+          ${posts.map(p => renderPostRow(p)).join('')}
+        </div>
+      </div>
+    `;
+  });
   return html;
 }
 
@@ -629,13 +792,16 @@ function renderPostRow(p) {
     p.platforms.includes('fb') ? '<span class="plat plat-fb">Facebook</span>' : '',
     p.platforms.includes('ig') ? '<span class="plat plat-ig">Instagram</span>' : ''
   ].join('');
+  const recurringTag = p.recurringType
+    ? `<span class="tag ${RECURRING_TYPES[p.recurringType].cls}">${RECURRING_TYPES[p.recurringType].icon} ${RECURRING_TYPES[p.recurringType].label}</span>`
+    : '';
   return `
     <div class="post-row" onclick="openPostDetail('${p.id}')">
       <div class="post-date">${p.date}</div>
       <div class="post-info">
         <div class="post-title">${p.title}</div>
         <div class="post-desc">${p.desc}</div>
-        <div class="post-tags">${plats}</div>
+        <div class="post-tags">${recurringTag}${plats}</div>
       </div>
       <div class="post-actions">
         <span class="status-pill ${s.cls}">${s.label}</span>
@@ -1083,15 +1249,30 @@ function saveMetaSettings() {
 /* ═══════════════════════════════════════════════
    POST DETAIL MODAL
 ═══════════════════════════════════════════════ */
+function findPostById(id) {
+  let p = STATE.posts.find(x => x.id === id);
+  if (p) return { post: p, list: STATE.posts };
+  p = STATE.recurringPosts.find(x => x.id === id);
+  if (p) return { post: p, list: STATE.recurringPosts };
+  return null;
+}
+
 function openPostDetail(id) {
-  const p = STATE.posts.find(x => x.id === id);
-  if (!p) return;
+  const found = findPostById(id);
+  if (!found) return;
+  const p = found.post;
 
   const statusOptions = ['draft','ready','scheduled','published']
     .map(s => `<option value="${s}" ${p.status===s?'selected':''}>${{draft:'Bozza',ready:'Pronto',scheduled:'Schedulato',published:'Pubblicato'}[s]}</option>`)
     .join('');
 
+  const recurringBadge = p.recurringType
+    ? `<div style="margin-bottom:12px"><span class="tag ${RECURRING_TYPES[p.recurringType].cls}">${RECURRING_TYPES[p.recurringType].icon} ${RECURRING_TYPES[p.recurringType].label} — ${p.month}</span></div>`
+    : '';
+  const deleteLabel = p.recurringType ? '🗑 Salta questa occorrenza' : '🗑 Elimina';
+
   openModal(p.title, `
+    ${recurringBadge}
     <div class="form-group" style="margin-bottom:12px">
       <label>Data</label>
       <input id="pd-date" value="${p.date}">
@@ -1115,14 +1296,15 @@ function openPostDetail(id) {
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
       <button class="btn" onclick="generateForPost('${id}')">✨ Genera testi con AI</button>
-      <button class="btn danger" onclick="deletePost('${id}')">🗑 Elimina</button>
+      <button class="btn danger" onclick="deletePost('${id}')">${deleteLabel}</button>
     </div>
   `);
 }
 
 function savePostDetail(id) {
-  const p = STATE.posts.find(x => x.id === id);
-  if (!p) return;
+  const found = findPostById(id);
+  if (!found) return;
+  const p = found.post;
   p.date   = document.getElementById('pd-date').value;
   p.desc   = document.getElementById('pd-desc').value;
   p.status = document.getElementById('pd-status').value;
@@ -1135,17 +1317,22 @@ function savePostDetail(id) {
 }
 
 function deletePost(id) {
-  if (!confirm('Eliminare questo post dal piano?')) return;
-  STATE.posts = STATE.posts.filter(x => x.id !== id);
+  const found = findPostById(id);
+  if (!found) return;
+  const msg = found.post.recurringType ? 'Saltare questa occorrenza ricorrente?' : 'Eliminare questo post dal piano?';
+  if (!confirm(msg)) return;
+  const idx = found.list.indexOf(found.post);
+  found.list.splice(idx, 1);
   closeModalDirect();
   showView('calendar');
-  showToast('🗑 Post eliminato');
+  showToast('🗑 Rimosso');
   autoSync();
 }
 
 async function generateForPost(id) {
-  const p = STATE.posts.find(x => x.id === id);
-  if (!p || !STATE.apiKey) { showToast('⚠️ Configura prima la API key'); return; }
+  const found = findPostById(id);
+  if (!found || !STATE.apiKey) { showToast('⚠️ Configura prima la API key'); return; }
+  const p = found.post;
   closeModalDirect();
   showView('generate');
   setTimeout(async () => {
@@ -1264,6 +1451,7 @@ async function saveToDropbox() {
     showToast('⏳ Salvataggio su Dropbox...');
     const payload = {
       posts:    STATE.posts,
+      recurringPosts: STATE.recurringPosts,
       settings: STATE.settings,
       version:  APP_VERSION,
       lastSaved: new Date().toISOString()
@@ -1319,6 +1507,7 @@ async function loadFromDropbox() {
     if (!response.ok) throw new Error('Errore HTTP ' + response.status);
     const data = await response.json();
     if (data.posts)    STATE.posts    = data.posts;
+    if (data.recurringPosts) STATE.recurringPosts = data.recurringPosts;
     if (data.settings) Object.assign(STATE.settings, data.settings);
     saveToStorage();
     showView(STATE.currentView);
