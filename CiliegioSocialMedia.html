@@ -6,6 +6,15 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v2.1.0 — 2026-06-16 — Piano stagionale completo: piatto del mese con 12 ricette toscane
+                         stagionali, prodotto del mese con 12 prodotti stagionali del shop,
+                         post tematico aggiornato con strategia anticipazione (mese M annuncia
+                         mese M+1: Natale a novembre, olio nuovo a settembre, ecc.).
+  v2.0.1 — 2026-06-16 — Date corrette: piano parte dal 22 giu 2026 (primo reminder lunedì)
+                         e dal 4 lug 2026 (primo piatto del mese), fino a giu 2028.
+  v2.0.0 — 2026-06-16 — Piano ricorrente rewrite: ciclo sabati ora continuo e globale
+                         (piatto→tematico→prodotto→vuoto→riparti), senza reset mensile.
+                         Risolve i buchi nei mesi con 4-5 sabati.
   v1.9.0 — 2025-06-15 — Nuovo bottone "📄 Esporta TXT" nel calendario: scarica un file di
                          testo con data e titolo di tutti i post (piano + ricorrenti) in
                          ordine cronologico, comodo da condividere o stampare.
@@ -446,9 +455,27 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.1.0',
+    date: '2026-06-16',
+    current: true,
+    description: 'Piano stagionale completo: ogni "Piatto del mese" ha ora una ricetta toscana di stagione specifica (Ribollita a gennaio, Panzanella a giugno, Bistecca a novembre…), ogni "Prodotto del mese" promuove il prodotto del shop più adatto alla stagione (olio nuovo a ottobre, box regalo a dicembre…), e il "Post tematico" anticipa sempre il mese successivo (a novembre si annunciano i pacchi di Natale, a settembre l\'olio nuovo in arrivo, ecc.).'
+  },
+  {
+    version: '2.0.1',
+    date: '2026-06-16',
+    current: false,
+    description: 'Date corrette: il piano ricorrente parte dal lunedì 22 giugno 2026 (primo reminder menù) e dal sabato 4 luglio 2026 (primo piatto del mese), con orizzonte fino a giugno 2028.'
+  },
+  {
+    version: '2.0.0',
+    date: '2026-06-16',
+    current: false,
+    description: 'Piano editoriale ricorrente rewrite: ciclo sabati ora continuo e globale (piatto→tematico→prodotto→vuoto→riparti), non più reset mese per mese. Elimina i buchi dovuti a mesi con 4-5 sabati.'
+  },
+  {
     version: '1.9.0',
     date: '2025-06-15',
-    current: true,
+    current: false,
     description: 'Nuovo bottone "Esporta TXT" nel calendario: scarica un file di testo con data e titolo di tutti i post (piano + ricorrenti) in ordine cronologico, da condividere o stampare facilmente.'
   },
   {
@@ -543,14 +570,17 @@ const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 /* ═══════════════════════════════════════════════
    CONTENUTI RICORRENTI
    Generati automaticamente da RECURRING_START a RECURRING_END:
-   - ogni lunedì: reminder menù della settimana
-   - 1° sabato disponibile del mese: piatto del mese (video)
-   - 2° sabato disponibile del mese: post tematico del mese
-   - 3° sabato disponibile del mese: prodotto del mese (scheda tecnica)
-   - eventuali sabati successivi: liberi (minipost spot)
+   - ogni lunedì (dal 30 giu 2025): reminder menù della settimana
+   - sabati in ciclo continuo globale (dal 5 lug 2025):
+       1° sabato del ciclo: piatto del mese
+       2° sabato del ciclo: post tematico
+       3° sabato del ciclo: prodotto del mese
+       4° sabato del ciclo: vuoto (nessun post)
+       → poi riparti — ciclo non reset a ogni mese
 ═══════════════════════════════════════════════ */
-const RECURRING_START = '2025-07-07';
-const RECURRING_END   = '2027-06-30';
+const RECURRING_START     = '2026-06-22'; // primo lunedì (reminder)
+const RECURRING_SAT_START = '2026-07-04'; // primo sabato del ciclo (piatto)
+const RECURRING_END       = '2028-06-30';
 
 const MONTH_NAMES_IT  = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MONTH_SHORT_IT  = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
@@ -575,20 +605,125 @@ function parsePostDate(p) {
   return { year: parseInt(monthMatch[2], 10), month: monthIdx, day: parseInt(dayMatch[1], 10) };
 }
 
-// 12 temi mensili ricorrenti, basati sul calendario agricolo/stagionale del Ciliegio
+// POST TEMATICO — annuncia il mese successivo (pubblicato nel mese M, parla del mese M+1)
+// Strategia: anticipazione + invito ad agire per tempo (prenotare, ordinare, regalare)
 const THEMATIC_PLAN = {
-  1:  { title: 'La cantina si ferma, il lavoro no',     desc: 'Potatura delle vigne e lavori invernali in campagna — racconto dietro le quinte fuori stagione', pillar: 'azienda' },
-  2:  { title: 'San Valentino al Ciliegio',              desc: 'Cena romantica nel ristorante, menù speciale per due, atmosfera invernale nel Chianti', pillar: 'ristorante' },
-  3:  { title: 'Risveglio della terra',                  desc: 'Primi lavori in vigna e nell\'orto, preparativi per la primavera, semina dei cereali antichi', pillar: 'azienda' },
-  4:  { title: 'Pasqua in agriturismo',                  desc: 'Menù pasquale tipico toscano (agnello, pici, torta pasqualina), invito a prenotare in famiglia', pillar: 'ristorante' },
-  5:  { title: 'Riapertura terrazza estiva',             desc: 'Foto panoramica sui vigneti al tramonto, primi aperitivi all\'aperto', pillar: 'ristorante' },
-  6:  { title: 'Estate nel Chianti',                     desc: 'Vita in agriturismo: passeggiate, degustazioni, relax tra i filari', pillar: 'azienda' },
-  7:  { title: 'Alta stagione: vivi l\'esperienza',      desc: 'Visite guidate in cantina, degustazioni guidate, esperienze per turisti e famiglie', pillar: 'azienda' },
-  8:  { title: 'Ferragosto in agriturismo',              desc: 'Evento/menù speciale di Ferragosto, posti limitati, atmosfera conviviale', pillar: 'ristorante' },
-  9:  { title: 'È iniziata la vendemmia!',               desc: 'Il momento più atteso dell\'anno — racconto della raccolta dell\'uva, squadra al lavoro', pillar: 'vino' },
-  10: { title: 'Raccolta delle olive',                   desc: 'Profumo dell\'olio nuovo, frantoio, dietro le quinte della molitura', pillar: 'olio' },
-  11: { title: 'Il nuovo olio è pronto',                 desc: 'Prima spremitura disponibile in vendita diretta e online, abbinamenti con i piatti del ristorante', pillar: 'olio' },
-  12: { title: 'Natale dal Ciliegio',                    desc: 'Cesti regalo con tutti i nostri prodotti (vino, olio, farine, legumi, dolci, distillati) e consegna a domicilio', pillar: 'shop' },
+  1:  { title: 'San Valentino al Ciliegio — prenota il tuo tavolo',
+        desc: 'Anticipa il menù speciale di San Valentino: cena per due nel ristorante, atmosfera invernale nel Chianti, abbinamento vino. Invito a prenotare con anticipo (posti limitati)',
+        pillar: 'ristorante' },
+  2:  { title: 'Marzo al Ciliegio: la terra si risveglia',
+        desc: 'Anticipa la primavera: prime gemme in vigna, semina dei cereali antichi, lavori nell\'orto. Racconto dietro le quinte con foto/video di campagna — invito a seguire la stagione',
+        pillar: 'azienda' },
+  3:  { title: 'Pasqua in agriturismo — prenota il tuo tavolo',
+        desc: 'Anticipa il menù pasquale: agnello al forno, pici fatti a mano, torta pasqualina, vini del Ciliegio. Invito a prenotare in anticipo per la grande tavolata di famiglia',
+        pillar: 'ristorante' },
+  4:  { title: 'Da maggio si mangia in terrazza!',
+        desc: 'Anticipa la riapertura della terrazza esterna: panorama sui vigneti, aperitivi al tramonto, menù primaverile. Invito a prenotare per i primi weekend di maggio',
+        pillar: 'ristorante' },
+  5:  { title: 'Estate nel Chianti: prenota la tua esperienza',
+        desc: 'Anticipa l\'estate al Ciliegio: degustazioni guidate, passeggiate tra i filari, cene all\'aperto. Invito a prenotare prima dell\'alta stagione',
+        pillar: 'azienda' },
+  6:  { title: 'Luglio al Ciliegio: visite, degustazioni e alta stagione',
+        desc: 'Anticipa l\'alta stagione: visite guidate in cantina, degustazioni dei vini, esperienze per famiglie e turisti. Invito a prenotare — i posti vanno veloci in luglio',
+        pillar: 'azienda' },
+  7:  { title: 'Ferragosto al Ciliegio — posti limitati, prenota subito',
+        desc: 'Anticipa il menù speciale di Ferragosto: atmosfera conviviale, cucina tipica toscana, vini del Ciliegio. Avviso posti limitati e invito a prenotare per tempo',
+        pillar: 'ristorante' },
+  8:  { title: 'La vendemmia si avvicina — seguici in settembre!',
+        desc: 'Anticipa la vendemmia: presto inizierà la raccolta dell\'uva nei nostri vigneti. Racconto dell\'attesa, invito a seguire i canali social per aggiornamenti in diretta',
+        pillar: 'vino' },
+  9:  { title: 'L\'olio nuovo è in arrivo — prenotalo ora',
+        desc: 'Anticipa la raccolta delle olive e la prima spremitura: l\'olio nuovo del Ciliegio sarà presto disponibile. Invito a prenotare la propria fornitura prima dell\'esaurimento',
+        pillar: 'olio' },
+  10: { title: 'L\'olio nuovo è pronto: ordina la tua bottiglia',
+        desc: 'La prima spremitura è disponibile in vendita diretta e online. Descrizione del profilo aromatico, abbinamenti in cucina, consegna a domicilio. Invito ad ordinare prima dell\'esaurimento',
+        pillar: 'olio' },
+  11: { title: 'Regali di Natale dal Ciliegio — ordina entro il 15 dicembre',
+        desc: 'Anticipa il Natale: cesti regalo con vino, olio, farine, legumi, distillati e dolci del Ciliegio. Consegna gratuita a domicilio. Invito ad ordinare per tempo per non restare senza',
+        pillar: 'shop' },
+  12: { title: 'Buon 2027 dal Ciliegio — degustazione di inizio anno',
+        desc: 'Saluta il nuovo anno: bilancio della stagione, annuncio delle novità in cantina e in vigna, invito alla degustazione di gennaio. Messaggio di auguri con visuale sui vigneti invernali',
+        pillar: 'azienda' },
+};
+
+// PIATTO DEL MESE — cucina toscana stagionale del Ciliegio
+const PIATTO_PLAN = {
+  1:  { title: 'Ribollita',
+        desc: 'La zuppa di pane e cavolo nero, emblema della cucina contadina toscana: fagioli borlotti, pane raffermo, olio a filo — preparata al Ciliegio con le nostre farine e i legumi di produzione propria',
+        pillar: 'ristorante' },
+  2:  { title: 'Pici cacio e pepe',
+        desc: 'Pasta fresca tirata a mano, il piatto romantico per eccellenza del Chianti: pici grossi fatti a mano con semola di grano antico, pecorino di stagione e pepe macinato al momento',
+        pillar: 'ristorante' },
+  3:  { title: 'Acquacotta',
+        desc: 'La zuppa contadina di primavera: erbe di campo, cipolla, pomodori, uovo affogato e pane raffermo con olio EVO del Ciliegio — un piatto povero che racconta la terra senese',
+        pillar: 'ristorante' },
+  4:  { title: 'Agnello al forno con patate novelle',
+        desc: 'Il protagonista delle tavole pasquali toscane: agnello locale con patate novelle, rosmarino e vino bianco — cotto lentamente nel forno a legna e servito con i nostri legumi di stagione',
+        pillar: 'ristorante' },
+  5:  { title: 'Bruschetta con olio nuovo e verdure di stagione',
+        desc: 'La semplicità che vale più di tante ricette elaborate: pane di farro del Ciliegio tostato sulla brace, strofinato d\'aglio, bagnato di olio EVO e coperto di verdure dell\'orto di stagione',
+        pillar: 'ristorante' },
+  6:  { title: 'Panzanella',
+        desc: 'L\'insalata estiva per eccellenza: pane toscano raffermo, pomodori maturi, cetriolo, cipolla rossa, basilico fresco e olio EVO del Ciliegio — fresca, senza cottura, perfetta per il caldo',
+        pillar: 'ristorante' },
+  7:  { title: 'Pappa al pomodoro',
+        desc: 'I pomodori maturi dell\'orto del Ciliegio, pane di farro raffermo, aglio, basilico e olio EVO: la pappa al pomodoro è il manifesto dell\'estate toscana — semplice, genuina e irresistibile',
+        pillar: 'ristorante' },
+  8:  { title: 'Cinghiale in umido con polenta di mais',
+        desc: 'Selvaggina locale brasata lentamente con il nostro Chianti rosso, aromi di macchia e verdure di stagione — servita con polenta di granturco macinata a pietra, il piatto forte dell\'agriturismo d\'agosto',
+        pillar: 'ristorante' },
+  9:  { title: 'Pici all\'aglione',
+        desc: 'Pasta fresca tirata a mano con la salsa di pomodoro e aglio di Valdichiana: l\'aglione è meno pungente dell\'aglio comune e regala un sugo profumato e avvolgente, da abbinare al Sangiovese del Ciliegio',
+        pillar: 'ristorante' },
+  10: { title: 'Crostini neri di fegatini con vino novello',
+        desc: 'L\'antipasto toscano d\'autunno per eccellenza: fegatini di pollo trifolati con cipolla, capperi e acciughe su pane toscano tostato — da abbinare al vino novello appena uscito dalla cantina del Ciliegio',
+        pillar: 'ristorante' },
+  11: { title: 'Bistecca alla Fiorentina con fagioli all\'uccelletto',
+        desc: 'Il grande piatto toscano: bistecca di Chianina (o locale) su brace viva, con i nostri fagioli borlotti all\'uccelletto con salvia e olio EVO — abbinamento con il Chianti Classico del Ciliegio',
+        pillar: 'ristorante' },
+  12: { title: 'Cappelletti in brodo',
+        desc: 'La pasta ripiena delle feste toscane: sfoglia di grano antico, ripieno di carne e parmigiano, serviti in brodo di cappone fatto in casa — il piatto della tradizione natalizia al Ciliegio',
+        pillar: 'ristorante' },
+};
+
+// PRODOTTO DEL MESE — stagionalità dei prodotti del Ciliegio (shop.ilciliegio.com)
+const PRODOTTO_PLAN = {
+  1:  { title: 'Distillati del Ciliegio',
+        desc: 'Grappa, amaro e liquori artigianali per scaldarsi in inverno: scheda tecnica dei nostri distillati, storia della produzione, abbinamenti e modalità d\'ordine online',
+        pillar: 'shop' },
+  2:  { title: 'Farine di grani antichi',
+        desc: 'Farro monococco, Senatore Cappelli, Timilia e Verna macinate a pietra: scheda dei prodotti, valori nutrizionali, ricette di stagione e abbinamenti — per chi ama cucinare con materie prime d\'eccellenza',
+        pillar: 'shop' },
+  3:  { title: 'Olio EVO del Ciliegio',
+        desc: 'Le ultime bottiglie della spremitura autunnale: profilo aromatico, cultivar (Frantoio, Moraiolo, Leccino), abbinamenti primaverili in cucina — ordina prima dell\'esaurimento',
+        pillar: 'olio' },
+  4:  { title: 'Legumi di produzione propria',
+        desc: 'Ceci, lenticchie, fagioli borlotti e zolfini coltivati al Ciliegio: scheda tecnica, tempi di ammollo, ricette classiche toscane — i legumi di primavera per le zuppe e i contorni della tradizione',
+        pillar: 'shop' },
+  5:  { title: 'Vini rossi del Ciliegio',
+        desc: 'Chianti, Sangiovese e Rosso di Toscana pronti per l\'aperitivo di primavera: scheda di degustazione, abbinamenti gastronomici, acquisto online e spedizione in tutta Italia',
+        pillar: 'vino' },
+  6:  { title: 'Bag in Box — vino per l\'estate',
+        desc: 'Vino sfuso del Ciliegio in formato Bag in Box (3, 5, 10 e 20 litri): pratico per grigliate, aperitivi in terrazza e cene all\'aperto — la scelta giusta per tutta l\'estate senza stappare ogni volta',
+        pillar: 'vino' },
+  7:  { title: 'Spumante e vino bianco del Ciliegio',
+        desc: 'Fresco e versatile per l\'alta stagione: il nostro Spumante e i bianchi di Toscana — scheda di degustazione, temperatura di servizio, abbinamenti estivi e ordine online',
+        pillar: 'vino' },
+  8:  { title: 'Aceto artigianale del Ciliegio',
+        desc: 'Aceto di vino affinato in botte: storia della produzione, usi in cucina (condire, marinare, conservare), e come portarlo a casa come souvenir autentico dal Chianti senese',
+        pillar: 'shop' },
+  9:  { title: 'Cereali antichi del Ciliegio',
+        desc: 'Farro, orzo e grano monococco del raccolto estivo: scheda dei cereali, proprietà nutrizionali, ricette autunnali (zuppe, risotti, pane) e disponibilità online',
+        pillar: 'shop' },
+  10: { title: 'Olio nuovo — prima spremitura',
+        desc: 'È pronta la prima spremitura dell\'anno: colore verde brillante, profumo erbaceo, sentori di carciofo e mandorla fresca. Ordina subito l\'olio nuovo del Ciliegio — esaurimento garantito',
+        pillar: 'olio' },
+  11: { title: 'Olio EVO — fai scorta per l\'inverno',
+        desc: 'L\'olio nuovo è disponibile in bottiglia e in latta: ordina la tua fornitura invernale direttamente online con consegna a domicilio — abbinamenti con i piatti della tradizione toscana d\'autunno',
+        pillar: 'olio' },
+  12: { title: 'Box regalo del Ciliegio',
+        desc: 'I cesti natalizi con i nostri prodotti: vino, olio, farine, legumi, distillati e dolci artigianali — spedizione gratuita in tutta Italia. Il regalo perfetto per chi ama i sapori autentici della Toscana',
+        pillar: 'shop' },
 };
 
 // Angoli/tagli diversi per il reminder settimanale del menù, per evitare
@@ -619,16 +754,18 @@ function makeRecurringPost(type, date) {
       desc  = 'Pubblicare il menù della settimana (foto + elenco piatti) su Facebook e Instagram';
       pillar = 'ristorante'; platforms = ['fb','ig']; format = 'reminder';
       break;
-    case 'piatto':
-      title = 'Piatto del mese';
-      desc  = 'Video autoprodotto della preparazione del piatto del mese';
-      pillar = 'ristorante'; platforms = ['fb','ig']; format = 'video';
+    case 'piatto': {
+      const p = PIATTO_PLAN[date.getMonth() + 1];
+      title = p.title; desc = p.desc; pillar = p.pillar;
+      platforms = ['fb','ig']; format = 'video';
       break;
-    case 'prodotto':
-      title = 'Prodotto del mese';
-      desc  = 'Scheda tecnica del prodotto del mese + abbinamenti (vino, farina, legumi...)';
-      pillar = 'shop'; platforms = ['fb','ig']; format = 'scheda-tecnica';
+    }
+    case 'prodotto': {
+      const pr = PRODOTTO_PLAN[date.getMonth() + 1];
+      title = pr.title; desc = pr.desc; pillar = pr.pillar;
+      platforms = ['fb','ig']; format = 'scheda-tecnica';
       break;
+    }
     case 'tematico': {
       const t = THEMATIC_PLAN[date.getMonth() + 1];
       title = t.title; desc = t.desc; pillar = t.pillar;
@@ -648,25 +785,24 @@ function makeRecurringPost(type, date) {
 }
 
 function generateRecurringPosts() {
-  const posts = [];
-  const start = new Date(RECURRING_START + 'T00:00:00');
-  const end   = new Date(RECURRING_END   + 'T00:00:00');
+  const posts   = [];
+  const start   = new Date(RECURRING_START     + 'T00:00:00');
+  const satStart= new Date(RECURRING_SAT_START + 'T00:00:00');
+  const end     = new Date(RECURRING_END       + 'T00:00:00');
 
-  for (let cursor = new Date(start); cursor <= end; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) {
-    const year  = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const monthFirstDay = (year === start.getFullYear() && month === start.getMonth()) ? start.getDate() : 1;
-    const monthLastDate = new Date(year, month + 1, 0);
-    const monthLastDay  = (monthLastDate > end) ? end.getDate() : monthLastDate.getDate();
+  // Ciclo continuo sabati: piatto → tematico → prodotto → (vuoto) → riparti
+  const SAT_ROLES = ['piatto', 'tematico', 'prodotto', null];
+  let satIdx = 0;
 
-    const saturdays = [];
-    for (let day = monthFirstDay; day <= monthLastDay; day++) {
-      const d = new Date(year, month, day);
-      if (d.getDay() === 1) posts.push(makeRecurringPost('reminder', d)); // lunedì
-      if (d.getDay() === 6) saturdays.push(d);                            // sabato
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay(); // 0=dom … 6=sab
+    if (dow === 1) {
+      posts.push(makeRecurringPost('reminder', new Date(d)));
+    } else if (dow === 6 && d >= satStart) {
+      const role = SAT_ROLES[satIdx % 4];
+      if (role !== null) posts.push(makeRecurringPost(role, new Date(d)));
+      satIdx++;
     }
-    const roles = ['piatto', 'tematico', 'prodotto'];
-    saturdays.slice(0, 3).forEach((d, i) => posts.push(makeRecurringPost(roles[i], d)));
   }
   return posts;
 }
