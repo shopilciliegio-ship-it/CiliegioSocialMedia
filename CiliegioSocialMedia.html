@@ -6,6 +6,9 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v2.2.0 — 2026-06-16 — Reminder menù: format fisso "Ovvia mimmi!" + link ristorante +
+                         storytelling stagionale; variazioni nel corpo. L'AI suggerisce
+                         anche la foto da scattare (campo "📸 Foto suggerita" nel post).
   v2.1.2 — 2026-06-16 — Calendario: giorno odierno evidenziato in verde. Fix "Genera testi
                          del mese": model ID aggiornato a claude-sonnet-4-6, gestione errori
                          API con messaggio leggibile invece di "unexpected end of JSON input".
@@ -462,9 +465,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.1.2',
+    version: '2.2.0',
     date: '2026-06-16',
     current: true,
+    description: 'Reminder menù del lunedì: format fisso con apertura obbligatoria "Ovvia mimmi!" + link al ristorante (ilciliegio.com/it/ristorante) + frase di storytelling stagionale; le variazioni ruotano nel corpo del post. L\'AI genera anche un campo "📸 Foto suggerita" con indicazione pratica su quale foto scattare o cercare nell\'archivio.'
+  },
+  {
+    version: '2.1.2',
+    date: '2026-06-16',
+    current: false,
     description: 'Calendario: il giorno odierno è evidenziato con bordo e numero verde. Fix "Genera testi del mese": aggiornato il model ID a claude-sonnet-4-6 (il vecchio ID non era valido e causava "unexpected end of JSON input"), gestione errori API con messaggio leggibile, default max_tokens aumentato a 1500.'
   },
   {
@@ -745,13 +754,13 @@ const PRODOTTO_PLAN = {
         pillar: 'shop' },
 };
 
-// Angoli/tagli diversi per il reminder settimanale del menù, per evitare
-// che i post si ripetano sempre identici — si alternano in ordine e ciclano.
+// Variazioni per il corpo del reminder settimanale del menù.
+// L'apertura "Ovvia mimmi!" e il link al sito sono fissi — cambia solo il focus del corpo.
 const REMINDER_ANGLES = [
-  'Apri con una domanda o una curiosità sul piatto forte di questa settimana, per stuzzicare la voglia di scoprire il menù',
-  'Racconta in 1-2 frasi la provenienza di un ingrediente di stagione usato questa settimana (orto, filiera corta, produzione propria)',
-  'Apri con un piccolo retroscena di cucina (es. cosa sta preparando lo chef, un dettaglio dietro le quinte)',
-  'Punta su un invito diretto e conviviale, ideale per chi vuole prenotare il weekend in famiglia o con amici',
+  'Nel corpo del post, stuzzica la curiosità su un ingrediente di stagione presente nel menù di questa settimana (orto, filiera corta, produzione propria del Ciliegio)',
+  'Nel corpo del post, racconta un piccolo retroscena di cucina: cosa sta preparando lo chef questa settimana, un dettaglio dietro le quinte, un profumo o una lavorazione particolare',
+  'Nel corpo del post, punta sull\'invito conviviale: è il momento perfetto per prenotare un tavolo con la famiglia o gli amici nel weekend, l\'atmosfera del Ciliegio aspetta solo voi',
+  'Nel corpo del post, apri con una domanda o una curiosità sul piatto forte della settimana, poi rivela che la risposta è nel menù online',
 ];
 
 const RECURRING_TYPES = {
@@ -874,8 +883,8 @@ function removeLegacyPlaceholders() {
 function extractRecurringOverrides() {
   const ov = {};
   STATE.recurringPosts.forEach(p => {
-    if (p.fbText || p.igText || p.status !== 'draft') {
-      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status };
+    if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint) {
+      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '' };
     }
   });
   return ov;
@@ -898,9 +907,10 @@ function applyRecurringOverrides(source) {
   STATE.recurringPosts.forEach(p => {
     const o = source[p.id];
     if (!o) return;
-    if (o.fbText)                    p.fbText = o.fbText;
-    if (o.igText)                    p.igText = o.igText;
-    if (o.status && o.status !== 'draft') p.status = o.status;
+    if (o.fbText)                         p.fbText    = o.fbText;
+    if (o.igText)                         p.igText    = o.igText;
+    if (o.photoHint)                      p.photoHint = o.photoHint;
+    if (o.status && o.status !== 'draft') p.status    = o.status;
   });
 }
 
@@ -1722,6 +1732,10 @@ function openPostDetail(id) {
       <label>Testo Instagram</label>
       <textarea id="pd-ig" style="min-height:100px">${p.igText || ''}</textarea>
     </div>
+    ${p.photoHint ? `<div class="form-group" style="margin-bottom:16px">
+      <label>📸 Foto suggerita</label>
+      <div style="background:var(--surface2); border-radius:var(--radius); padding:10px 12px; font-size:13px; color:var(--text2); line-height:1.5">${p.photoHint}</div>
+    </div>` : ''}
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
       <button class="btn" onclick="generateForPost('${id}')">✨ Genera testi con AI</button>
@@ -1887,27 +1901,38 @@ async function generateMonthContent() {
 async function generateReminderBatch(reminders, monthLabel) {
   const items = reminders.map((p, i) => {
     const angle = REMINDER_ANGLES[i % REMINDER_ANGLES.length];
-    return `${i + 1}. Data: ${p.date} — taglio da usare: ${angle}`;
+    return `${i + 1}. Data: ${p.date} — variazione: ${angle}`;
   }).join('\n');
 
   const prompt = `${BUSINESS_INTRO}
 
 ${buildStyleContext()}
 
-Devi scrivere ${reminders.length} post "Reminder: menù della settimana" per ${monthLabel}, uno per ciascuna di queste date:
+Devi scrivere ${reminders.length} post "Reminder menù della settimana" per ${monthLabel}.
+
+FORMAT OBBLIGATORIO PER OGNI POST (rispettalo sempre):
+1. Apertura FISSA: inizia SEMPRE con "Ovvia mimmi!" (espressione toscana tipica, vuol dire "ragazzi, adesso ci siamo!" — tono caldo e diretto)
+2. Annuncio: i menù della settimana sono aggiornati online su https://www.ilciliegio.com/it/ristorante
+3. Frase di storytelling stagionale (tipo "la nostra cucina si racconta attraverso i prodotti di stagione!" — varia ogni volta, mantienila autentica e toscana)
+4. Chiusura: invito a prenotare o a visitare il sito
+
+Per variare tra i post usa la "variazione" indicata per ciascuna data (cambia il focus del corpo, non l'apertura fissa).
+
+Date e variazioni:
 ${items}
 
-Ogni post annuncia che il menù della settimana è online e invita a scoprirlo/prenotare. Per evitare che sembrino tutti uguali, usa per ciascun post il "taglio" indicato — variando frase d'apertura, struttura e dettagli, ma mantenendo lo stile ${STATE.settings.tone} e rispettando le linee guida di formato sopra.
+Per ogni post suggerisci anche una foto specifica da scattare o cercare nell'archivio (es. "esterno del ristorante al tramonto", "primo piano di un piatto stagionale", "vigneto con luce mattutina", ecc.) — pratica, realistica, coerente con il periodo.
 
-Rispondi ESCLUSIVAMENTE in JSON con un array di ${reminders.length} oggetti, nello stesso ordine delle date sopra, formato:
-[{ "facebook": "testo per Facebook", "instagram": "testo per Instagram" }, ...]`;
+Rispondi ESCLUSIVAMENTE in JSON con un array di ${reminders.length} oggetti, nello stesso ordine delle date, formato:
+[{ "facebook": "testo FB", "instagram": "testo IG", "foto": "suggerimento foto" }, ...]`;
 
-  const maxTokens = Math.min(4000, 600 * reminders.length + 200);
+  const maxTokens = Math.min(6000, 800 * reminders.length + 300);
   const arr = await callClaude(prompt, maxTokens);
   reminders.forEach((p, i) => {
-    p.fbText = arr[i]?.facebook || '';
-    p.igText = arr[i]?.instagram || '';
-    p.status = 'ready';
+    p.fbText     = arr[i]?.facebook  || '';
+    p.igText     = arr[i]?.instagram || '';
+    p.photoHint  = arr[i]?.foto      || '';
+    p.status     = 'ready';
   });
 }
 
