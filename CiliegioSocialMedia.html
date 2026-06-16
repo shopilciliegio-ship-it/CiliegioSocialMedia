@@ -818,7 +818,7 @@ const STATE = {
   dropboxAccessTokenExpiry: 0,
   dropboxConnected: false,
   currentView: 'calendar',
-  calendarMonth: { year: 2025, month: 6 }, // Luglio 2025
+  calendarMonth: (() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; })(),
   posts: getDefaultPosts(),
   recurringPosts: generateRecurringPosts(),
   settings: {
@@ -850,6 +850,41 @@ function removeLegacyPlaceholders() {
   return STATE.posts.length !== before;
 }
 
+// Estrae solo i campi modificati dall'utente nei post ricorrenti (testi AI, status).
+// La struttura (date, titoli) viene sempre rigenerata dal codice — non va salvata.
+function extractRecurringOverrides() {
+  const ov = {};
+  STATE.recurringPosts.forEach(p => {
+    if (p.fbText || p.igText || p.status !== 'draft') {
+      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status };
+    }
+  });
+  return ov;
+}
+
+// Applica gli override salvati ai post ricorrenti appena rigenerati.
+// Gestisce anche il vecchio formato (array completo) per migrazione automatica.
+function applyRecurringOverrides(source) {
+  if (!source) return;
+  // Vecchio formato: array completo di post — estrai gli override al volo
+  if (Array.isArray(source)) {
+    const map = {};
+    source.forEach(p => {
+      if (p.fbText || p.igText || (p.status && p.status !== 'draft')) {
+        map[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status };
+      }
+    });
+    source = map;
+  }
+  STATE.recurringPosts.forEach(p => {
+    const o = source[p.id];
+    if (!o) return;
+    if (o.fbText)                    p.fbText = o.fbText;
+    if (o.igText)                    p.igText = o.igText;
+    if (o.status && o.status !== 'draft') p.status = o.status;
+  });
+}
+
 /* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
@@ -874,7 +909,9 @@ function loadFromStorage() {
       if (parsed.dropboxAccessTokenExpiry) STATE.dropboxAccessTokenExpiry = parsed.dropboxAccessTokenExpiry;
       if (parsed.settings)     Object.assign(STATE.settings, parsed.settings);
       if (parsed.posts)        STATE.posts = parsed.posts;
-      if (parsed.recurringPosts) STATE.recurringPosts = parsed.recurringPosts;
+      // Applica solo le modifiche utente (testi AI, status) ai post ricorrenti freschi.
+      // Supporta sia il nuovo formato (recurringOverrides) sia il vecchio (array completo).
+      applyRecurringOverrides(parsed.recurringOverrides || parsed.recurringPosts);
     }
   } catch(e) {}
 }
@@ -887,9 +924,9 @@ function saveToStorage() {
       dropboxRefreshToken: STATE.dropboxRefreshToken,
       dropboxAccessToken:  STATE.dropboxAccessToken,
       dropboxAccessTokenExpiry: STATE.dropboxAccessTokenExpiry,
-      settings:         STATE.settings,
-      posts:            STATE.posts,
-      recurringPosts:   STATE.recurringPosts
+      settings:             STATE.settings,
+      posts:                STATE.posts,
+      recurringOverrides:   extractRecurringOverrides()
     }));
   } catch(e) {}
 }
@@ -1914,11 +1951,11 @@ async function saveToDropbox() {
   try {
     showToast('⏳ Salvataggio su Dropbox...');
     const payload = {
-      posts:    STATE.posts,
-      recurringPosts: STATE.recurringPosts,
-      settings: STATE.settings,
-      version:  APP_VERSION,
-      lastSaved: new Date().toISOString()
+      posts:              STATE.posts,
+      recurringOverrides: extractRecurringOverrides(),
+      settings:           STATE.settings,
+      version:            APP_VERSION,
+      lastSaved:          new Date().toISOString()
     };
     const response = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
       method: 'POST',
@@ -1978,9 +2015,9 @@ async function loadFromDropbox() {
       throw new Error(`HTTP ${response.status}: ${msg}`);
     }
     const data = await response.json();
-    if (data.posts)    STATE.posts    = data.posts;
-    if (data.recurringPosts) STATE.recurringPosts = data.recurringPosts;
+    if (data.posts)    STATE.posts = data.posts;
     if (data.settings) Object.assign(STATE.settings, data.settings);
+    applyRecurringOverrides(data.recurringOverrides || data.recurringPosts);
     const cleaned = removeLegacyPlaceholders();
     saveToStorage();
     if (cleaned) await saveToDropbox();
