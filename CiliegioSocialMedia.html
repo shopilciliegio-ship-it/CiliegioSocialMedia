@@ -6,6 +6,11 @@
 <title>Il Ciliegio — Social Media Agent</title>
 
 <!-- VERSION MANIFEST
+  v2.3.0 — 2026-06-16 — Archivio foto: nuova sezione "📷 Archivio foto" che legge le
+                         immagini dalla cartella Dropbox /IlCiliegio/SocialMedia/foto,
+                         mostra thumbnail (batch API), permette di associare una foto
+                         a ogni post dal dettaglio del calendario. Suggerimento AI foto
+                         unificato con il selettore nella stessa riga del post.
   v2.2.0 — 2026-06-16 — Reminder menù: format fisso "Ovvia mimmi!" + link ristorante +
                          storytelling stagionale; variazioni nel corpo. L'AI suggerisce
                          anche la foto da scattare (campo "📸 Foto suggerita" nel post).
@@ -227,6 +232,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .cal-day-num { font-size: 12px; font-weight: 600; color: var(--text2); }
 .cal-day.today { border-color: var(--green); }
 .cal-day.today .cal-day-num { color: var(--green); font-weight: 700; font-size: 13px; }
+
+/* ── Archivio foto ── */
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.photo-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+.photo-card:hover { border-color: var(--green); box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+.photo-card.selected { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.25); }
+.photo-thumb { width: 100%; height: 110px; object-fit: cover; background: var(--surface2); display: block; }
+.photo-card-name { font-size: 11px; color: var(--text2); padding: 5px 8px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.photo-empty { padding: 48px 24px; text-align: center; color: var(--text2); }
+.photo-empty .photo-empty-icon { font-size: 36px; margin-bottom: 12px; }
+.photo-empty code { background: var(--surface2); padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .cal-chip { font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-more { font-size: 10px; color: var(--text3); padding-left: 2px; }
 
@@ -423,6 +439,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
         <span class="icon">📐</span> Format post
       </button>
       <div class="nav-section">Operativo</div>
+      <button class="nav-item" data-view="photos" onclick="showView('photos')">
+        <span class="icon">📷</span> Archivio foto
+      </button>
       <button class="nav-item" data-view="publish" onclick="showView('publish')">
         <span class="icon">📤</span> Pubblica & schedula
       </button>
@@ -465,9 +484,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.2.0',
+    version: '2.3.0',
     date: '2026-06-16',
     current: true,
+    description: 'Archivio foto: nuova sezione "📷 Archivio foto" nel menu laterale. Legge le immagini dalla cartella Dropbox /IlCiliegio/SocialMedia/foto, mostra thumbnail via batch API (una sola chiamata per 25 foto), e permette di associare una foto a ogni post cliccando "Scegli dall\'archivio Dropbox" nel dettaglio post. Suggerimento AI unificato con il selettore foto.'
+  },
+  {
+    version: '2.2.0',
+    date: '2026-06-16',
+    current: false,
     description: 'Reminder menù del lunedì: format fisso con apertura obbligatoria "Ovvia mimmi!" + link al ristorante (ilciliegio.com/it/ristorante) + frase di storytelling stagionale; le variazioni ruotano nel corpo del post. L\'AI genera anche un campo "📸 Foto suggerita" con indicazione pratica su quale foto scattare o cercare nell\'archivio.'
   },
   {
@@ -589,7 +614,8 @@ const APP_VERSION = VERSIONS.find(v => v.current).version;
    localStorage. L'access token (valido ~4h) viene rinnovato in
    automatico ad ogni sync — niente token da incollare a mano.
 ═══════════════════════════════════════════════ */
-const DROPBOX_FILE_PATH = '/IlCiliegio/SocialMedia/piano.json';
+const DROPBOX_FILE_PATH   = '/IlCiliegio/SocialMedia/piano.json';
+const DROPBOX_PHOTO_FOLDER = '/IlCiliegio/SocialMedia/foto';
 const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 const DROPBOX_AUTH_URL  = 'https://www.dropbox.com/oauth2/authorize';
@@ -883,8 +909,8 @@ function removeLegacyPlaceholders() {
 function extractRecurringOverrides() {
   const ov = {};
   STATE.recurringPosts.forEach(p => {
-    if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint) {
-      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '' };
+    if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile) {
+      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '' };
     }
   });
   return ov;
@@ -910,6 +936,8 @@ function applyRecurringOverrides(source) {
     if (o.fbText)                         p.fbText    = o.fbText;
     if (o.igText)                         p.igText    = o.igText;
     if (o.photoHint)                      p.photoHint = o.photoHint;
+    if (o.photoFile)                      p.photoFile = o.photoFile;
+    if (o.photoName)                      p.photoName = o.photoName;
     if (o.status && o.status !== 'draft') p.status    = o.status;
   });
 }
@@ -988,6 +1016,7 @@ const VIEW_TITLES = {
   generate: 'Genera contenuti',
   pillars:  'Pilastri tematici',
   formats:  'Format post',
+  photos:   'Archivio foto',
   publish:  'Pubblica & schedula',
   settings: 'Impostazioni'
 };
@@ -1003,6 +1032,7 @@ const VIEW_ACTIONS = {
   generate: '',
   pillars: '',
   formats: '',
+  photos:  `<button class="btn sm" onclick="loadAndRenderPhotos()">🔄 Ricarica</button>`,
   publish: '',
   settings: ''
 };
@@ -1021,6 +1051,7 @@ function showView(name) {
     case 'generate': c.innerHTML = renderGenerate(); break;
     case 'pillars':  c.innerHTML = renderPillars();  break;
     case 'formats':  c.innerHTML = renderFormats();  break;
+    case 'photos':   c.innerHTML = renderPhotos();   break;
     case 'publish':  c.innerHTML = renderPublish();  break;
     case 'settings': c.innerHTML = renderSettings(); break;
   }
@@ -1732,10 +1763,19 @@ function openPostDetail(id) {
       <label>Testo Instagram</label>
       <textarea id="pd-ig" style="min-height:100px">${p.igText || ''}</textarea>
     </div>
-    ${p.photoHint ? `<div class="form-group" style="margin-bottom:16px">
-      <label>📸 Foto suggerita</label>
-      <div style="background:var(--surface2); border-radius:var(--radius); padding:10px 12px; font-size:13px; color:var(--text2); line-height:1.5">${p.photoHint}</div>
-    </div>` : ''}
+    <div class="form-group" style="margin-bottom:16px">
+      <label>📸 Foto</label>
+      ${p.photoFile ? `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
+          <span style="font-size:13px; color:var(--text2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${p.photoName || p.photoFile}</span>
+          <button class="btn sm" onclick="openPhotoPicker('${id}')">Cambia</button>
+          <button class="btn sm danger" onclick="removePhoto('${id}')">✕</button>
+        </div>` : `
+        <div style="display:flex; align-items:center; gap:10px">
+          <button class="btn sm" onclick="openPhotoPicker('${id}')">Scegli dall'archivio Dropbox</button>
+        </div>`}
+      ${p.photoHint ? `<div style="margin-top:8px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.5">💡 Suggerimento AI: ${p.photoHint}</div>` : ''}
+    </div>
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
       <button class="btn" onclick="generateForPost('${id}')">✨ Genera testi con AI</button>
@@ -1985,6 +2025,153 @@ function showVersions() {
       Ogni nuova versione viene aggiunta in cima a questo registro. Le versioni precedenti vengono archiviate automaticamente e non vengono mai eliminate.
     </div>
   `);
+}
+
+/* ═══════════════════════════════════════════════
+   ARCHIVIO FOTO
+   Legge le foto dalla cartella Dropbox DROPBOX_PHOTO_FOLDER,
+   mostra thumbnail via batch API, permette di associare
+   una foto a ogni post del calendario.
+═══════════════════════════════════════════════ */
+
+let _photoCache = []; // cache locale per la sessione
+
+// Lista i file immagine nella cartella foto su Dropbox.
+// Restituisce array di file-metadata, [] se cartella vuota, null se errore.
+async function listDropboxPhotos() {
+  const token = await getDropboxAccessToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${DROPBOX_API}/files/list_folder`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: DROPBOX_PHOTO_FOLDER, recursive: false })
+    });
+    if (res.status === 409) return []; // cartella non ancora creata
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error_summary || `HTTP ${res.status}`); }
+    const data = await res.json();
+    return data.entries
+      .filter(e => e['.tag'] === 'file' && /\.(jpe?g|png|webp|gif|heic)$/i.test(e.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch(e) { console.error('listDropboxPhotos:', e); return null; }
+}
+
+// Carica thumbnail in batch (max 25 per chiamata) e le inserisce negli <img data-photo-idx>.
+async function loadPhotoThumbs(photos, gridId) {
+  const token = await getDropboxAccessToken();
+  if (!token || !photos.length) return;
+  const BATCH = 25;
+  for (let i = 0; i < photos.length; i += BATCH) {
+    const slice = photos.slice(i, i + BATCH);
+    try {
+      const res = await fetch(`${DROPBOX_CONTENT}/files/get_thumbnail_batch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: slice.map(p => ({ path: p.path_lower, format: 'jpeg', size: 'w256h256', mode: 'bestfit' })) })
+      });
+      const data = await res.json();
+      data.entries?.forEach((entry, j) => {
+        if (entry['.tag'] === 'success' && entry.thumbnail) {
+          const img = document.querySelector(`#${gridId} [data-photo-idx="${i + j}"]`);
+          if (img) img.src = `data:image/jpeg;base64,${entry.thumbnail}`;
+        }
+      });
+    } catch(e) { console.error('thumbnail batch:', e); }
+  }
+}
+
+function _photoCardHtml(photo, idx, onclickJs) {
+  return `<div class="photo-card" onclick="${onclickJs}">
+    <img class="photo-thumb" data-photo-idx="${idx}" src="" alt="">
+    <div class="photo-card-name" title="${photo.name}">${photo.name}</div>
+  </div>`;
+}
+
+// Vista principale archivio foto
+function renderPhotos() {
+  if (!STATE.dropboxRefreshToken) {
+    return `<div class="section-head"><div class="section-title">Archivio foto</div></div>
+      <div class="photo-empty">
+        <div class="photo-empty-icon">📦</div>
+        <div>Connetti Dropbox in Impostazioni per accedere all'archivio foto.</div>
+        <br><button class="btn primary" onclick="showView('settings')">⚙️ Impostazioni</button>
+      </div>`;
+  }
+  setTimeout(loadAndRenderPhotos, 30);
+  return `
+    <div class="section-head">
+      <div class="section-title">Archivio foto</div>
+      <div style="font-size:12px; color:var(--text2)">Dropbox: <code>${DROPBOX_PHOTO_FOLDER}</code></div>
+    </div>
+    <div id="photos-main"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento da Dropbox...</div></div>
+  `;
+}
+
+async function loadAndRenderPhotos() {
+  const container = document.getElementById('photos-main');
+  if (!container) return;
+  const photos = await listDropboxPhotos();
+  _photoCache = photos || [];
+  if (photos === null) {
+    container.innerHTML = `<div class="photo-empty"><div class="photo-empty-icon">❌</div>Errore caricamento — verifica la connessione Dropbox.</div>`;
+    return;
+  }
+  if (!photos.length) {
+    container.innerHTML = `<div class="photo-empty">
+      <div class="photo-empty-icon">📭</div>
+      <strong>Nessuna foto nell'archivio</strong><br><br>
+      Carica le tue foto JPG/PNG su Dropbox nella cartella:<br>
+      <code>${DROPBOX_PHOTO_FOLDER}</code><br><br>
+      <small>Poi premi 🔄 Ricarica in alto a destra.</small>
+    </div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div style="margin-bottom:14px; font-size:13px; color:var(--text2)">${photos.length} foto disponibili — clicca su un post nel calendario per associarne una</div>
+    <div class="photo-grid" id="photos-grid-main">
+      ${photos.map((p, i) => _photoCardHtml(p, i, '')).join('')}
+    </div>`;
+  loadPhotoThumbs(photos, 'photos-grid-main');
+}
+
+// Apre un modal per scegliere una foto da associare al post `postId`
+async function openPhotoPicker(postId) {
+  openModal('📷 Scegli una foto dall\'archivio', `<div id="picker-wrap"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento...</div></div>`);
+  const photos = _photoCache.length ? _photoCache : await listDropboxPhotos();
+  if (photos) _photoCache = photos;
+  const wrap = document.getElementById('picker-wrap');
+  if (!wrap) return;
+  if (!photos || !photos.length) {
+    wrap.innerHTML = `<div class="photo-empty"><div class="photo-empty-icon">📭</div>
+      Nessuna foto in <code>${DROPBOX_PHOTO_FOLDER}</code>.<br>Carica prima le foto su Dropbox.</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="photo-grid" id="photos-grid-picker">
+    ${photos.map((p, i) => _photoCardHtml(p, i, `selectPhoto('${postId}', ${i})`)).join('')}
+  </div>`;
+  loadPhotoThumbs(photos, 'photos-grid-picker');
+}
+
+function selectPhoto(postId, photoIdx) {
+  const photo = _photoCache[photoIdx];
+  if (!photo) return;
+  const found = findPostById(postId);
+  if (!found) return;
+  found.post.photoFile = photo.path_lower;
+  found.post.photoName = photo.name;
+  closeModalDirect();
+  showToast(`📸 Foto associata: ${photo.name}`);
+  openPostDetail(postId);
+  autoSync();
+}
+
+function removePhoto(postId) {
+  const found = findPostById(postId);
+  if (!found) return;
+  found.post.photoFile = '';
+  found.post.photoName = '';
+  openPostDetail(postId);
+  autoSync();
 }
 
 /* ═══════════════════════════════════════════════
