@@ -240,9 +240,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .photo-card.selected { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.25); }
 .photo-thumb { width: 100%; height: 110px; object-fit: cover; background: var(--surface2); display: block; }
 .photo-card-name { font-size: 11px; color: var(--text2); padding: 5px 8px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.photo-card-cat { display: block; font-size: 10px; font-weight: 600; color: var(--green-dark); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 1px; }
 .photo-empty { padding: 48px 24px; text-align: center; color: var(--text2); }
 .photo-empty .photo-empty-icon { font-size: 36px; margin-bottom: 12px; }
 .photo-empty code { background: var(--surface2); padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.photo-cat-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.photo-cat-btn { font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text2); cursor: pointer; text-transform: capitalize; }
+.photo-cat-btn:hover { border-color: var(--green); }
+.photo-cat-btn.active { background: var(--green-light); border-color: var(--green); color: var(--green-dark); font-weight: 600; }
 .cal-chip { font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-more { font-size: 10px; color: var(--text3); padding-left: 2px; }
 
@@ -484,9 +489,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.3.1',
+    date: '2026-07-06',
+    current: true,
+    description: 'Archivio foto con categorie: la lettura da Dropbox ora è ricorsiva e include le sottocartelle (Cantina-Vino, Cibo-Tavola, Sale-Eventi, Panorami-Esterni, Storia-Famiglia, Persone-VitaQuotidiana, Feste-Eventi). Ogni foto mostra la sua categoria e sono comparsi filtri rapidi per categoria sia nell\'archivio che nel selettore foto del post.'
+  },
+  {
     version: '2.3.0',
     date: '2026-06-16',
-    current: true,
+    current: false,
     description: 'Archivio foto: nuova sezione "📷 Archivio foto" nel menu laterale. Legge le immagini dalla cartella Dropbox /IlCiliegio/SocialMedia/foto, mostra thumbnail via batch API (una sola chiamata per 25 foto), e permette di associare una foto a ogni post cliccando "Scegli dall\'archivio Dropbox" nel dettaglio post. Suggerimento AI unificato con il selettore foto.'
   },
   {
@@ -2029,34 +2040,60 @@ function showVersions() {
 
 /* ═══════════════════════════════════════════════
    ARCHIVIO FOTO
-   Legge le foto dalla cartella Dropbox DROPBOX_PHOTO_FOLDER,
-   mostra thumbnail via batch API, permette di associare
-   una foto a ogni post del calendario.
+   Legge le foto dalla cartella Dropbox DROPBOX_PHOTO_FOLDER
+   e dalle sue sottocartelle (categorie), mostra thumbnail
+   via batch API, permette di associare una foto a ogni
+   post del calendario e di filtrare per categoria.
 ═══════════════════════════════════════════════ */
 
 let _photoCache = []; // cache locale per la sessione
+let _photoCatMain = '';   // categoria attiva nella vista archivio
+let _photoCatPicker = ''; // categoria attiva nel picker del post
 
-// Lista i file immagine nella cartella foto su Dropbox.
-// Restituisce array di file-metadata, [] se cartella vuota, null se errore.
+// Estrae il nome della sottocartella (categoria) dal path di un file,
+// relativo a DROPBOX_PHOTO_FOLDER. '' se il file è nella cartella radice.
+function _photoCategoryOf(entry) {
+  const rootLower = DROPBOX_PHOTO_FOLDER.toLowerCase().replace(/\/+$/, '') + '/';
+  const rel = entry.path_lower.startsWith(rootLower) ? entry.path_lower.slice(rootLower.length) : entry.name.toLowerCase();
+  const slashIdx = rel.lastIndexOf('/');
+  return slashIdx > -1 ? rel.slice(0, slashIdx) : '';
+}
+
+// Lista i file immagine nella cartella foto su Dropbox e nelle sue sottocartelle,
+// con relativa categoria (nome sottocartella). [] se cartella vuota, null se errore.
 async function listDropboxPhotos() {
   const token = await getDropboxAccessToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${DROPBOX_API}/files/list_folder`, {
+    let entries = [];
+    let data;
+    let res = await fetch(`${DROPBOX_API}/files/list_folder`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: DROPBOX_PHOTO_FOLDER, recursive: false })
+      body: JSON.stringify({ path: DROPBOX_PHOTO_FOLDER, recursive: true })
     });
     if (res.status === 409) return []; // cartella non ancora creata
     if (!res.ok) { const d = await res.json(); throw new Error(d.error_summary || `HTTP ${res.status}`); }
-    const data = await res.json();
-    return data.entries
+    data = await res.json();
+    entries = entries.concat(data.entries);
+    while (data.has_more) {
+      res = await fetch(`${DROPBOX_API}/files/list_folder/continue`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cursor: data.cursor })
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error_summary || `HTTP ${res.status}`); }
+      data = await res.json();
+      entries = entries.concat(data.entries);
+    }
+    return entries
       .filter(e => e['.tag'] === 'file' && /\.(jpe?g|png|webp|gif|heic)$/i.test(e.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .map(e => { e.category = _photoCategoryOf(e); return e; })
+      .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
   } catch(e) { console.error('listDropboxPhotos:', e); return null; }
 }
 
-// Carica thumbnail in batch (max 25 per chiamata) e le inserisce negli <img data-photo-idx>.
+// Carica thumbnail in batch (max 25 per chiamata) e le inserisce negli <img data-photo-path>.
 async function loadPhotoThumbs(photos, gridId) {
   const token = await getDropboxAccessToken();
   if (!token || !photos.length) return;
@@ -2072,7 +2109,7 @@ async function loadPhotoThumbs(photos, gridId) {
       const data = await res.json();
       data.entries?.forEach((entry, j) => {
         if (entry['.tag'] === 'success' && entry.thumbnail) {
-          const img = document.querySelector(`#${gridId} [data-photo-idx="${i + j}"]`);
+          const img = document.querySelector(`#${gridId} [data-photo-path="${CSS.escape(slice[j].path_lower)}"]`);
           if (img) img.src = `data:image/jpeg;base64,${entry.thumbnail}`;
         }
       });
@@ -2080,10 +2117,25 @@ async function loadPhotoThumbs(photos, gridId) {
   }
 }
 
-function _photoCardHtml(photo, idx, onclickJs) {
+// Escape di una stringa per l'uso dentro un attributo onclick="..." con argomenti tra apici singoli.
+function _jsAttr(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+function _photoCardHtml(photo, onclickJs) {
+  const catLabel = photo.category ? photo.category.replace(/-/g, ' ') : '';
   return `<div class="photo-card" onclick="${onclickJs}">
-    <img class="photo-thumb" data-photo-idx="${idx}" src="" alt="">
-    <div class="photo-card-name" title="${photo.name}">${photo.name}</div>
+    <img class="photo-thumb" data-photo-path="${photo.path_lower.replace(/"/g, '&quot;')}" src="" alt="">
+    <div class="photo-card-name" title="${photo.name}">${catLabel ? `<span class="photo-card-cat">${catLabel}</span>` : ''}${photo.name}</div>
+  </div>`;
+}
+
+// Genera i pulsanti filtro categoria a partire dall'elenco completo delle foto.
+function _photoCatChips(allPhotos, activeCat, onclickFnName) {
+  const cats = [...new Set(allPhotos.map(p => p.category).filter(Boolean))].sort();
+  if (!cats.length) return '';
+  const chip = (val, label) => `<button class="photo-cat-btn${activeCat === val ? ' active' : ''}" onclick="${onclickFnName}('${_jsAttr(val)}')">${label}</button>`;
+  return `<div class="photo-cat-filters">
+    ${chip('', 'Tutte')}
+    ${cats.map(c => chip(c, c.replace(/-/g, ' '))).join('')}
   </div>`;
 }
 
@@ -2101,7 +2153,7 @@ function renderPhotos() {
   return `
     <div class="section-head">
       <div class="section-title">Archivio foto</div>
-      <div style="font-size:12px; color:var(--text2)">Dropbox: <code>${DROPBOX_PHOTO_FOLDER}</code></div>
+      <div style="font-size:12px; color:var(--text2)">Dropbox: <code>${DROPBOX_PHOTO_FOLDER}</code> (incluse sottocartelle)</div>
     </div>
     <div id="photos-main"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento da Dropbox...</div></div>
   `;
@@ -2126,12 +2178,27 @@ async function loadAndRenderPhotos() {
     </div>`;
     return;
   }
+  _photoCatMain = '';
+  renderPhotosGrid();
+}
+
+// Ridisegna solo la griglia (dopo un cambio di filtro categoria), senza richiamare Dropbox.
+function renderPhotosGrid() {
+  const container = document.getElementById('photos-main');
+  if (!container) return;
+  const photos = _photoCatMain ? _photoCache.filter(p => p.category === _photoCatMain) : _photoCache;
   container.innerHTML = `
+    ${_photoCatChips(_photoCache, _photoCatMain, 'setPhotoCatMain')}
     <div style="margin-bottom:14px; font-size:13px; color:var(--text2)">${photos.length} foto disponibili — clicca su un post nel calendario per associarne una</div>
     <div class="photo-grid" id="photos-grid-main">
-      ${photos.map((p, i) => _photoCardHtml(p, i, '')).join('')}
+      ${photos.map(p => _photoCardHtml(p, '')).join('')}
     </div>`;
   loadPhotoThumbs(photos, 'photos-grid-main');
+}
+
+function setPhotoCatMain(cat) {
+  _photoCatMain = cat;
+  renderPhotosGrid();
 }
 
 // Apre un modal per scegliere una foto da associare al post `postId`
@@ -2139,21 +2206,37 @@ async function openPhotoPicker(postId) {
   openModal('📷 Scegli una foto dall\'archivio', `<div id="picker-wrap"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento...</div></div>`);
   const photos = _photoCache.length ? _photoCache : await listDropboxPhotos();
   if (photos) _photoCache = photos;
-  const wrap = document.getElementById('picker-wrap');
-  if (!wrap) return;
   if (!photos || !photos.length) {
-    wrap.innerHTML = `<div class="photo-empty"><div class="photo-empty-icon">📭</div>
+    const wrap = document.getElementById('picker-wrap');
+    if (wrap) wrap.innerHTML = `<div class="photo-empty"><div class="photo-empty-icon">📭</div>
       Nessuna foto in <code>${DROPBOX_PHOTO_FOLDER}</code>.<br>Carica prima le foto su Dropbox.</div>`;
     return;
   }
-  wrap.innerHTML = `<div class="photo-grid" id="photos-grid-picker">
-    ${photos.map((p, i) => _photoCardHtml(p, i, `selectPhoto('${postId}', ${i})`)).join('')}
-  </div>`;
+  _photoCatPicker = '';
+  renderPhotoPickerGrid(postId);
+}
+
+// Ridisegna solo la griglia del picker (dopo un cambio di filtro categoria).
+function renderPhotoPickerGrid(postId) {
+  const wrap = document.getElementById('picker-wrap');
+  if (!wrap) return;
+  const photos = _photoCatPicker ? _photoCache.filter(p => p.category === _photoCatPicker) : _photoCache;
+  wrap.innerHTML = `
+    ${_photoCatChips(_photoCache, _photoCatPicker, 'setPhotoCatPicker')}
+    <div class="photo-grid" id="photos-grid-picker">
+      ${photos.map(p => _photoCardHtml(p, `selectPhoto('${_jsAttr(postId)}', '${_jsAttr(p.path_lower)}')`)).join('')}
+    </div>`;
+  window._photoPickerPostId = postId;
   loadPhotoThumbs(photos, 'photos-grid-picker');
 }
 
-function selectPhoto(postId, photoIdx) {
-  const photo = _photoCache[photoIdx];
+function setPhotoCatPicker(cat) {
+  _photoCatPicker = cat;
+  renderPhotoPickerGrid(window._photoPickerPostId);
+}
+
+function selectPhoto(postId, path) {
+  const photo = _photoCache.find(p => p.path_lower === path);
   if (!photo) return;
   const found = findPostById(postId);
   if (!found) return;
@@ -2322,7 +2405,7 @@ async function connectDropbox() {
     code_challenge: challenge,
     code_challenge_method: 'S256',
     token_access_type: 'offline',
-    scope: 'files.content.write files.content.read',
+    scope: 'files.content.write files.content.read files.metadata.read',
     redirect_uri: dropboxRedirectUri()
   });
   location.href = `${DROPBOX_AUTH_URL}?${params.toString()}`;
