@@ -489,9 +489,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.4.0',
+    version: '2.5.0',
     date: '2026-07-06',
     current: true,
+    description: 'Completata la calibrazione editoriale: regole specifiche per pilastro (vino, olio, ristorante, agriturismo, shop) e per periodo stagionale, iniettate automaticamente in ogni generazione AI. "💾 Salva nel piano editoriale" ora crea davvero il post con i testi generati (prima era uno stub). Aggiunto campo opzionale "Serie narrativa" per contenuti collegati (es. vendemmia giorno per giorno).'
+  },
+  {
+    version: '2.4.0',
+    date: '2026-07-06',
+    current: false,
     description: 'Calibrazione editoriale su analisi competitor (Fèlsina, La Vialla, Pacina): identità aziendale corretta (Chianti Colli Senesi, terza generazione, Via Francigena), regole di tono anti-brochure, domanda finale obbligatoria sui post Facebook per l\'engagement, mix hashtag italiano/inglese/nicchia su Instagram, e collegamento del campo Lingua (Italiano/Inglese/Bilingue) alla generazione AI — prima impostabile ma ignorato.'
   },
   {
@@ -1285,7 +1291,11 @@ function renderGenerate() {
       </div>
       <div class="form-group" style="margin-bottom:14px">
         <label>Dettagli aggiuntivi (opzionale)</label>
-        <textarea id="gen-extra" placeholder="Es: stiamo promuovendo il nuovo Chianti Classico 2023, abbinato ai pici al cinghiale del menu di agosto..."></textarea>
+        <textarea id="gen-extra" placeholder="Es: stiamo promuovendo il nuovo Chianti Colli Senesi 2023, abbinato ai pici al cinghiale del menu di agosto..."></textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Parte di una serie narrativa? (opzionale)</label>
+        <input id="gen-series" placeholder="Es: Giorno 2 della vendemmia — serie di 5 post">
       </div>
       <div style="display:flex; gap:8px; align-items:center">
         <button class="btn primary" onclick="generateContent()" id="gen-btn" style="flex:1; justify-content:center; padding:10px 0;">
@@ -1379,6 +1389,46 @@ function buildStyleContext() {
   return ctx;
 }
 
+// Calibrazione editoriale specifica per pilastro tematico (vedi CSM_Istruzioni_PostCalibration.md).
+const PILLAR_HINTS = {
+  vino: `Racconta il processo vitivinicolo con dettagli tecnici resi poetici. Il Sangiovese è il vitigno protagonista (circa il 90% delle uve). La vendemmia (settembre-ottobre) è il momento narrativo più potente dell'anno. Riferimento naturale alla storia: "Produciamo Chianti Colli Senesi dal 1952". Non usare mai punteggi, voti o citazioni di guide enologiche: il vino si racconta, non si vota.`,
+  olio: `La raccolta delle olive è a novembre — un momento breve e prezioso. Dettaglio chiave: l'olio nuovo si riconosce dal colore verde intenso e dal pizzicore in gola. Collega sempre l'olio ai piatti del ristorante (a crudo sulla ribollita, sulla bruschetta).`,
+  ristorante: `Cucina di territorio con materie prime proprie: km zero reale, non marketing. Cita piatti specifici con ingredienti veri (es. "pici al cinghiale con Chianti Colli Senesi", "ribollita con cavolo nero dell'orto e olio nuovo"). CTA sempre orientata alla prenotazione (WhatsApp o sito). Non usare mai "delizie" o "piatti prelibati": descrivi i sapori reali.`,
+  azienda: `L'agriturismo è didattico: racconta il valore educativo, non solo il relax. La Via Francigena è un hook potente per i turisti stranieri. Monteriggioni con le sue mura medievali è un landmark riconoscibile a livello internazionale. Esperienze concrete da citare: vendemmia partecipata, raccolta olive, visita in cantina, laboratori.`,
+  shop: `Cereali antichi, farine, legumi, distillati e dolci sono l'unicità del catalogo rispetto ai competitor che fanno solo vino. Racconta la rarità dei prodotti (es. "farro monococco che non si trova al supermercato"). Spedizioni in tutta Italia ed Europa.`
+};
+
+// Calibrazione editoriale per periodo stagionale (5 fasce, vedi CSM_Istruzioni_PostCalibration.md).
+const SEASON_HINTS = [
+  `Tono intimista, dietro le quinte: il lato nascosto del lavoro agricolo (potatura, cantina, semina). Es. hook: "Il vino si fa d'inverno, non solo d'estate". Se pertinente, racconta chi in famiglia ha insegnato questi gesti alle generazioni successive.`,
+  `Tono caldo, invitante, primaverile: risveglio della campagna, riapertura del ristorante e della terrazza. CTA forte verso le prenotazioni per la bella stagione.`,
+  `Tono esperienziale, rivolto anche ai turisti stranieri in alta stagione. La Via Francigena porta un pubblico internazionale: valuta contenuti bilingue o hashtag in inglese.`,
+  `Il momento più ricco e narrativo dell'anno: vendemmia e raccolta delle olive. Tono appassionato e autentico, con dettagli sensoriali forti (il profumo del mosto, le mani viola d'uva, le foglie degli ulivi che diventano argento).`,
+  `Tono di calore familiare, tradizione, regalo: l'olio nuovo appena fatto e i preparativi natalizi. "L'olio nuovo è pronto" è tra i contenuti più attesi dai follower affezionati. CTA forte verso shop online e confezioni regalo.`
+];
+
+// Deduce la fascia stagionale da un'etichetta mese tipo "Settembre 2025" o "Settembre 2025 – Vendemmia".
+function seasonHintFor(monthLabel) {
+  if (!monthLabel) return '';
+  const name = monthLabel.trim().split(/\s+/)[0];
+  const idx = MONTH_NAMES_IT.indexOf(name);
+  if (idx === -1) return '';
+  if (idx <= 2) return SEASON_HINTS[0];  // Gen-Mar
+  if (idx <= 5) return SEASON_HINTS[1];  // Apr-Giu
+  if (idx <= 7) return SEASON_HINTS[2];  // Lug-Ago
+  if (idx <= 9) return SEASON_HINTS[3];  // Set-Ott
+  return SEASON_HINTS[4];                // Nov-Dic
+}
+
+// Blocco di calibrazione per pilastro + stagione, da appendere ai prompt insieme a buildStyleContext().
+function buildCalibrationContext(pillar, monthLabel) {
+  let ctx = '';
+  if (PILLAR_HINTS[pillar]) ctx += `\n\nCALIBRAZIONE PILASTRO:\n${PILLAR_HINTS[pillar]}`;
+  const season = seasonHintFor(monthLabel);
+  if (season) ctx += `\n\nCALIBRAZIONE STAGIONALE:\n${season}`;
+  return ctx;
+}
+
 async function callClaude(prompt, maxTokens = 1500) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -1418,6 +1468,7 @@ async function generateContent() {
   const tone   = document.getElementById('gen-tone').value;
   const goal   = document.getElementById('gen-goal').value;
   const extra  = document.getElementById('gen-extra').value;
+  const series = document.getElementById('gen-series').value;
 
   const btn = document.getElementById('gen-btn');
   btn.innerHTML = '<span class="spinner"></span> Generazione in corso...';
@@ -1429,12 +1480,13 @@ async function generateContent() {
 
   const prompt = `${BUSINESS_INTRO}
 
-${buildStyleContext()}
+${buildStyleContext()}${buildCalibrationContext(pillar, month)}
 
 Devi creare due versioni di post social per il pilastro "${pillar}", da pubblicare in "${month}".
 Tono: ${tone}
 Obiettivo: ${goal}
 ${extra ? 'Dettagli aggiuntivi: ' + extra : ''}
+${series ? `Nota: questo post fa parte di una serie narrativa (${series}) — scrivilo in modo che si colleghi coerentemente agli altri episodi, senza ripetere la stessa apertura o la stessa struttura già usata negli altri post della serie.` : ''}
 
 Rispondi ESCLUSIVAMENTE in JSON con questo formato (nessun testo fuori dal JSON):
 {
@@ -1480,8 +1532,44 @@ function editOutput(platform) {
   };
 }
 
+const PILLAR_LABELS = {
+  vino: 'Vino & Cantina', olio: 'Olio EVO', ristorante: 'Ristorante & Menu',
+  azienda: 'Agriturismo & Esperienze', shop: 'Shop & Prodotti'
+};
+
 function saveGeneratedToPost() {
-  showToast('💾 Salvataggio in corso...');
+  const fbText = document.getElementById('fb-output').textContent;
+  const igText = document.getElementById('ig-output').textContent;
+  if (!fbText || fbText === '—' || fbText.startsWith('Errore') || fbText === 'Generazione in corso...') {
+    showToast('⚠️ Genera prima i testi con AI');
+    return;
+  }
+
+  const pillar = document.getElementById('gen-pillar').value;
+  const month  = document.getElementById('gen-month').value;
+  const extra  = document.getElementById('gen-extra').value.trim();
+  const pillarLabel = PILLAR_LABELS[pillar] || pillar;
+
+  // Il calendario richiede il mese in formato esatto "NomeMese AAAA" (senza suffissi tipo "– Vendemmia").
+  const monthMatch = month.match(/^(\S+)\s+(\d{4})/);
+  const monthClean = monthMatch ? `${monthMatch[1]} ${monthMatch[2]}` : month;
+  const monthIdx   = monthMatch ? MONTH_NAMES_IT.indexOf(monthMatch[1]) : -1;
+  const dateLabel  = monthIdx > -1 ? `1 ${MONTH_SHORT_IT[monthIdx]}` : '';
+
+  STATE.posts.push({
+    id: 'p' + Date.now(),
+    status: 'ready',
+    fbText, igText,
+    title: extra ? extra.slice(0, 60) : pillarLabel,
+    date: dateLabel,
+    month: monthClean,
+    pillar,
+    desc: extra || pillarLabel,
+    platforms: ['fb', 'ig']
+  });
+
+  showToast('✅ Post salvato nel piano editoriale!');
+  showView('calendar');
   autoSync();
 }
 
@@ -1857,6 +1945,7 @@ async function generateForPost(id) {
   closeModalDirect();
   showView('generate');
   setTimeout(async () => {
+    if (p.pillar) document.getElementById('gen-pillar').value = p.pillar;
     document.getElementById('gen-extra').value = p.title + ' — ' + p.desc;
     await generateContent();
   }, 300);
@@ -1982,9 +2071,10 @@ async function generateReminderBatch(reminders, monthLabel) {
     return `${i + 1}. Data: ${p.date} — variazione: ${angle}`;
   }).join('\n');
 
+  const seasonHint = seasonHintFor(monthLabel);
   const prompt = `${BUSINESS_INTRO}
 
-${buildStyleContext()}
+${buildStyleContext()}${seasonHint ? `\n\nCALIBRAZIONE STAGIONALE:\n${seasonHint}` : ''}
 
 Devi scrivere ${reminders.length} post "Reminder menù della settimana" per ${monthLabel}.
 
@@ -2025,7 +2115,7 @@ async function generateSinglePost(p) {
   const hint = FORMAT_HINTS[p.format] || '';
   const prompt = `${BUSINESS_INTRO}
 
-${buildStyleContext()}
+${buildStyleContext()}${buildCalibrationContext(p.pillar, p.month)}
 
 Crea due versioni di post social per "${p.title}".
 Descrizione/contesto: ${p.desc}
