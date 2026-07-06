@@ -489,9 +489,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.5.0',
+    version: '2.5.1',
     date: '2026-07-06',
     current: true,
+    description: 'Fix: i menu "Mese di pubblicazione" (generatore) e "Mese" (nuovo post) erano bloccati su opzioni fisse dell\'anno 2025. Ora mostrano sempre una finestra scorrevole dei 12 mesi a partire da quello corrente, con i suffissi stagionali (Vendemmia, Raccolta olive, Natale) calcolati dinamicamente invece che cablati su un anno specifico.'
+  },
+  {
+    version: '2.5.0',
+    date: '2026-07-06',
+    current: false,
     description: 'Completata la calibrazione editoriale: regole specifiche per pilastro (vino, olio, ristorante, agriturismo, shop) e per periodo stagionale, iniettate automaticamente in ogni generazione AI. "💾 Salva nel piano editoriale" ora crea davvero il post con i testi generati (prima era uno stub). Aggiunto campo opzionale "Serie narrativa" per contenuti collegati (es. vendemmia giorno per giorno).'
   },
   {
@@ -811,6 +817,25 @@ const REMINDER_ANGLES = [
   'Nel corpo del post, punta sull\'invito conviviale: è il momento perfetto per prenotare un tavolo con la famiglia o gli amici nel weekend, l\'atmosfera del Ciliegio aspetta solo voi',
   'Nel corpo del post, apri con una domanda o una curiosità sul piatto forte della settimana, poi rivela che la risposta è nel menù online',
 ];
+
+// Suffissi stagionali mostrati nel menu "Mese di pubblicazione" del generatore
+// (solo testo informativo, non influenzano il parsing della data).
+const MONTH_SUFFIXES = { 8: ' – Vendemmia', 9: ' – Raccolta olive', 11: ' – Natale' };
+
+// Genera una finestra rolling di 12 mesi a partire dal mese corrente, così il menu
+// non resta mai bloccato su un anno fisso (era hardcoded al 2025).
+// withSuffix=true aggiunge l'indicazione stagionale (solo per il generatore AI:
+// il valore va ripulito prima di salvarlo come p.month, vedi saveGeneratedToPost).
+function buildMonthOptions(withSuffix) {
+  const now = new Date();
+  const opts = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const suffix = withSuffix ? (MONTH_SUFFIXES[d.getMonth()] || '') : '';
+    opts.push(`${MONTH_NAMES_IT[d.getMonth()]} ${d.getFullYear()}${suffix}`);
+  }
+  return opts;
+}
 
 const RECURRING_TYPES = {
   reminder: { icon: '📋', label: 'Reminder menù',   cls: 'tag-reminder' },
@@ -1262,12 +1287,7 @@ function renderGenerate() {
         <div class="form-group">
           <label>Mese di pubblicazione</label>
           <select id="gen-month">
-            <option>Luglio 2025</option>
-            <option>Agosto 2025</option>
-            <option>Settembre 2025 – Vendemmia</option>
-            <option>Ottobre 2025 – Raccolta olive</option>
-            <option>Novembre 2025</option>
-            <option>Dicembre 2025 – Natale</option>
+            ${buildMonthOptions(true).map(m => `<option>${m}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -1962,8 +1982,7 @@ function addPostModal() {
       <div class="form-group">
         <label>Mese</label>
         <select id="np-month">
-          <option>Luglio 2025</option><option>Agosto 2025</option>
-          <option>Settembre 2025</option><option>Ottobre 2025</option><option>Novembre 2025</option><option>Dicembre 2025</option>
+          ${buildMonthOptions(false).map(m => `<option>${m}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
