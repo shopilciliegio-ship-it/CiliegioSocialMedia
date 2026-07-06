@@ -489,9 +489,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.3.1',
+    version: '2.4.0',
     date: '2026-07-06',
     current: true,
+    description: 'Calibrazione editoriale su analisi competitor (Fèlsina, La Vialla, Pacina): identità aziendale corretta (Chianti Colli Senesi, terza generazione, Via Francigena), regole di tono anti-brochure, domanda finale obbligatoria sui post Facebook per l\'engagement, mix hashtag italiano/inglese/nicchia su Instagram, e collegamento del campo Lingua (Italiano/Inglese/Bilingue) alla generazione AI — prima impostabile ma ignorato.'
+  },
+  {
+    version: '2.3.1',
+    date: '2026-07-06',
+    current: false,
     description: 'Archivio foto con categorie: la lettura da Dropbox ora è ricorsiva e include le sottocartelle (Cantina-Vino, Cibo-Tavola, Sale-Eventi, Panorami-Esterni, Storia-Famiglia, Persone-VitaQuotidiana, Feste-Eventi). Ogni foto mostra la sua categoria e sono comparsi filtri rapidi per categoria sia nell\'archivio che nel selettore foto del post.'
   },
   {
@@ -1322,7 +1328,16 @@ function renderGenerate() {
 /* ═══════════════════════════════════════════════
    CLAUDE API HELPER
 ═══════════════════════════════════════════════ */
-const BUSINESS_INTRO = `Sei il social media manager dell'Azienda Agricola Il Ciliegio di Monteriggioni (Siena), nel cuore del Chianti. L'azienda è a conduzione familiare, fondata nel 1952. Produce e vende vino (Chianti Classico), olio EVO, cereali antichi, farine, legumi, distillati e dolci. Ha un ristorante con cucina tipica toscana e un agriturismo didattico. Sito: www.ilciliegio.com | WhatsApp prenotazioni: 329/1767348 | Shop: shop@ilciliegio.com`;
+const BUSINESS_INTRO = `Sei il social media manager dell'Azienda Agricola Il Ciliegio di Monteriggioni (Siena), nel cuore del Chianti Colli Senesi, sulla Via Francigena. L'azienda è a conduzione familiare dal 1952 — oggi alla terza generazione. Produce e vende vino (Chianti Colli Senesi, spumante), olio EVO, cereali antichi, farine, legumi, distillati e dolci. Ha un ristorante con cucina tipica toscana a km zero e un agriturismo didattico. Sito: www.ilciliegio.com | WhatsApp prenotazioni: 329/1767348 | Shop: shop@ilciliegio.com
+
+Tono di voce: caldo, autentico, familiare — mai patinato o da brochure turistica. Il Ciliegio non si vanta mai in modo diretto: mostra, non dice. Preferisci sempre dettagli concreti e sensoriali (un colore, un odore, un gesto) a aggettivi vuoti come "eccellente" o "unico". Quando è pertinente, collega il racconto alle tre generazioni della famiglia dal 1952.
+
+COSE DA NON FARE MAI:
+- Frasi da brochure tipo "scopri l'autentica Toscana" o "immersi nella natura"
+- Aggettivi vuoti ("eccellente", "straordinario", "unico") senza un dettaglio concreto a supporto
+- Elenchi di caratteristiche del prodotto senza una storia o un momento reale
+- CTA assente o poco chiara
+- Lo stesso tono identico su Facebook e Instagram: sono due registri diversi (vedi linee guida di formato)`;
 
 // Linee guida di formato (vedi anche la pagina "📐 Format post" in app):
 // vengono passate all'AI per ogni generazione, così le regole restano
@@ -1331,23 +1346,33 @@ const FORMAT_GUIDELINES = `LINEE GUIDA DI FORMATO — rispettale per entrambi i 
 
 Facebook:
 - Lunghezza 150-250 parole
-- Struttura: hook emozionale → storytelling → dettaglio prodotto/servizio → call to action
+- Struttura: hook emozionale → storytelling → dettaglio prodotto/servizio → call to action → domanda finale
 - 3-5 emoji integrate nel testo
 - CTA tipo "Prenota il tuo tavolo →", "Ordina online", "Scrivici su WhatsApp"
 - Link: www.ilciliegio.com oppure wa.me/393291767348
 - 3-5 hashtag rilevanti in fondo al testo
+- Chiudi SEMPRE con una domanda aperta ai follower (1 riga, dopo la CTA) per generare commenti — es. "Voi quando iniziate a usare l'olio nuovo?", "Qual è il vostro piatto d'autunno preferito?". Non è opzionale: ogni post Facebook deve finire con una domanda.
 
 Instagram:
 - Lunghezza 80-120 parole (caption concisa)
-- Struttura: prima riga d'impatto (compare nel feed) → 2-3 frasi evocative → call to action → hashtag separati
+- Struttura: prima riga d'impatto (max 125 caratteri, deve fermare il pollice nel feed — breve, sensoriale o inaspettata) → 2-3 frasi evocative → call to action → hashtag separati
 - Emoji più abbondanti, visive e atmosferiche
-- 15-20 hashtag pertinenti (mix popolare + di nicchia), separati dal testo
+- 15-20 hashtag pertinenti, separati dal testo, con questo mix obbligatorio:
+  - alcuni in italiano (#agriturismo #vinotoscano #oliobiologico #monteriggioni #chianticollisenesi)
+  - alcuni in inglese, per intercettare i turisti stranieri sulla Via Francigena (#tuscany #italianwine #farmtotable #chianti #tuscanyfood)
+  - alcuni di nicchia specifici del brand (#terzagenerazione #viafrancigena #agricolturabiologica #kmzero)
+  - il resto generalisti/di tendenza (#toscana #italy #winelover #foodphotography)
 - Se utile, rimanda alle stories per i contenuti dietro le quinte`;
 
 // Costruisce il blocco di contesto stilistico da appendere ai prompt:
 // linee guida di formato + eventuali post di riferimento incollati in Impostazioni.
 function buildStyleContext() {
   let ctx = FORMAT_GUIDELINES;
+  if (STATE.settings.language === 'Inglese') {
+    ctx += `\n\nLINGUA: scrivi sia il testo Facebook sia il testo Instagram in inglese.`;
+  } else if (STATE.settings.language === 'Bilingue') {
+    ctx += `\n\nLINGUA: scrivi il testo Facebook in italiano e il testo Instagram in inglese (per intercettare i turisti stranieri che seguono l'account su Instagram).`;
+  }
   if (STATE.settings.styleExamples && STATE.settings.styleExamples.trim()) {
     ctx += `\n\nESEMPI DI POST DI RIFERIMENTO (stile e tono a cui ispirarsi, non copiare i contenuti):\n${STATE.settings.styleExamples.trim()}`;
   }
@@ -1524,11 +1549,12 @@ function renderFormats() {
       <div class="settings-title">📘 Format Facebook</div>
       <div style="font-size:13px; color:var(--text2); line-height:1.8; margin-bottom:12px">
         <strong>Lunghezza:</strong> 150–250 parole<br>
-        <strong>Struttura:</strong> Hook emozionale → Storytelling → Dettaglio prodotto/servizio → CTA con link o WhatsApp<br>
+        <strong>Struttura:</strong> Hook emozionale → Storytelling → Dettaglio prodotto/servizio → CTA con link o WhatsApp → Domanda finale<br>
         <strong>Emoji:</strong> 3–5 per post, integrate nel testo<br>
         <strong>CTA:</strong> "Prenota il tuo tavolo →", "Ordina online", "Scrivici su WhatsApp"<br>
         <strong>Link:</strong> www.ilciliegio.com oppure wa.me/393291767348<br>
-        <strong>Hashtag:</strong> 3–5 hashtag rilevanti in fondo
+        <strong>Hashtag:</strong> 3–5 hashtag rilevanti in fondo<br>
+        <strong>Domanda finale:</strong> ogni post chiude con una domanda aperta ai follower, per generare commenti
       </div>
       <div style="background:var(--surface2); border-radius:var(--radius); padding:14px; font-size:12px; color:var(--text2); line-height:1.7;">
         <em>Esempio struttura:</em><br><br>
@@ -1536,16 +1562,17 @@ function renderFormats() {
         [2-3 paragrafi di storytelling sul prodotto/esperienza]<br><br>
         📍 Siamo a Monteriggioni, nel cuore del Chianti senese.<br>
         👉 [CTA con link]<br><br>
-        #IlCiliegio #ChiantiClassico #AgricolturaToscana
+        [Domanda finale ai follower]<br><br>
+        #IlCiliegio #ChiantiCollisenesi #AgricolturaToscana
       </div>
     </div>
     <div class="settings-section">
       <div class="settings-title">📸 Format Instagram</div>
       <div style="font-size:13px; color:var(--text2); line-height:1.8; margin-bottom:12px">
         <strong>Lunghezza:</strong> 80–120 parole (caption concisa)<br>
-        <strong>Struttura:</strong> Prima riga impattante (compare nel feed) → 2-3 frasi evocative → CTA → Hashtag separati<br>
+        <strong>Struttura:</strong> Prima riga impattante (max 125 caratteri, ferma il pollice nel feed) → 2-3 frasi evocative → CTA → Hashtag separati<br>
         <strong>Emoji:</strong> Più abbondanti, visive e atmosferiche<br>
-        <strong>Hashtag:</strong> 15–20 hashtag pertinenti (mix popolare + niche)<br>
+        <strong>Hashtag:</strong> 15–20, mix obbligatorio italiano + inglese (per i turisti sulla Via Francigena) + nicchia brand + generalisti<br>
         <strong>Stories:</strong> Rimanda sempre alle stories per contenuti dietro le quinte
       </div>
       <div style="background:var(--surface2); border-radius:var(--radius); padding:14px; font-size:12px; color:var(--text2); line-height:1.7;">
@@ -1554,7 +1581,7 @@ function renderFormats() {
         [2-3 frasi evocative e sensoriali]<br><br>
         🔗 Link in bio per prenotazioni e shop<br><br>
         .<br>.<br>.<br>
-        #IlCiliegio #Agriturismo #ChiantiClassico #ToscanaAutentica #VinoToscano #OlioEVO #Monteriggioni #Siena #AgricolturaFamiliare #KmZero #MadeInTuscany #VinoItaliano #FoodToscana #Ristorazione #AgriturismoDidattico
+        #IlCiliegio #Agriturismo #ChiantiCollisenesi #VinoToscano #OlioEVO #Monteriggioni #Siena #Tuscany #ItalianWine #FarmToTable #Chianti #TuscanyFood #TerzaGenerazione #ViaFrancigena #KmZero
       </div>
     </div>
     <div class="settings-section">
