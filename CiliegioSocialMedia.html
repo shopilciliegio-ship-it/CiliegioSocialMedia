@@ -489,9 +489,27 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.7.1',
+    date: '2026-07-07',
+    current: true,
+    description: 'Corretti 3 piatti del mese non autenticamente senesi: Acquacotta (marzo, tipica di Maremma/Firenze) sostituita con Trippa alla senese; Agnello al forno (aprile) sostituito con Arista di Cinta Senese al forno (la razza suina DOP autoctona delle colline di Siena); Cappelletti in brodo (dicembre, piatto romagnolo, fuori zona) sostituito con Panforte di Siena.'
+  },
+  {
+    version: '2.7.0',
+    date: '2026-07-07',
+    current: false,
+    description: 'Ripensati i post ricorrenti del sabato: "Piatto del mese" non è più una caption per video (che non si producono) ma un testo su ingredienti e genuinità, senza ricetta passo-passo; il vecchio "Post tematico" diventa "Stagionalità del mese" e racconta il ritmo della campagna nel mese in corso (non più il mese successivo); il 4° sabato, prima vuoto, diventa "What\'s Next" e ospita l\'anticipazione del mese successivo che prima era nel post tematico. "Prodotto del mese" più snello e meno prolisso. Tutti e tre ora si abbinano automaticamente a una foto reale dell\'archivio Dropbox in base a pillar/stagione/formato (cartelle "piatti-mese" e "prodotti" da creare per coprire piatto del mese e prodotti shop/olio). Popup di "Genera testi del mese" avvisa anche della sovrascrittura della foto sui reminder.'
+  },
+  {
+    version: '2.6.0',
+    date: '2026-07-07',
+    current: false,
+    description: 'Reminder del lunedì abbinato a una foto reale dell\'archivio Dropbox invece che a un suggerimento generico: il taglio alterna ogni settimana RISTORANTE (foto categoria Cibo-Tavola/Sale-Eventi, parla del menù) e GENERICO (foto categoria Panorami-Esterni/Persone-VitaQuotidiana/Storia-Famiglia/Feste-Eventi, racconta la vita dell\'azienda), con rotazione automatica delle foto disponibili nella categoria e testo costruito intorno all\'ambientazione scelta. Testi del reminder anche più brevi e meno specifici su richiesta (max 100-130 parole FB, 60-80 IG, niente dettagli iper specifici che rischiano di essere imprecisi).'
+  },
+  {
     version: '2.5.1',
     date: '2026-07-06',
-    current: true,
+    current: false,
     description: 'Fix: i menu "Mese di pubblicazione" (generatore) e "Mese" (nuovo post) erano bloccati su opzioni fisse dell\'anno 2025. Ora mostrano sempre una finestra scorrevole dei 12 mesi a partire da quello corrente, con i suffissi stagionali (Vendemmia, Raccolta olive, Natale) calcolati dinamicamente invece che cablati su un anno specifico.'
   },
   {
@@ -656,9 +674,9 @@ const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
    - ogni lunedì (dal 30 giu 2025): reminder menù della settimana
    - sabati in ciclo continuo globale (dal 5 lug 2025):
        1° sabato del ciclo: piatto del mese
-       2° sabato del ciclo: post tematico
+       2° sabato del ciclo: stagionalità del mese (ex "post tematico")
        3° sabato del ciclo: prodotto del mese
-       4° sabato del ciclo: vuoto (nessun post)
+       4° sabato del ciclo: what's next (anticipa il mese successivo)
        → poi riparti — ciclo non reset a ogni mese
 ═══════════════════════════════════════════════ */
 const RECURRING_START     = '2026-06-22'; // primo lunedì (reminder)
@@ -688,7 +706,8 @@ function parsePostDate(p) {
   return { year: parseInt(monthMatch[2], 10), month: monthIdx, day: parseInt(dayMatch[1], 10) };
 }
 
-// POST TEMATICO — annuncia il mese successivo (pubblicato nel mese M, parla del mese M+1)
+// WHAT'S NEXT — post del 4° sabato del ciclo: annuncia il mese successivo (pubblicato nel
+// mese M, parla del mese M+1) con tono leggero e invitante, per creare aspettativa.
 // Strategia: anticipazione + invito ad agire per tempo (prenotare, ordinare, regalare)
 const THEMATIC_PLAN = {
   1:  { title: 'San Valentino al Ciliegio — prenota il tuo tavolo',
@@ -729,6 +748,35 @@ const THEMATIC_PLAN = {
         pillar: 'azienda' },
 };
 
+// STAGIONALITÀ DEL MESE — post del 2° sabato del ciclo: racconta in poche righe il ritmo
+// della campagna nel mese IN CORSO (non un evento futuro, non una ricetta). Pillar fisso 'azienda'.
+const STAGIONALITA_PLAN = {
+  1:  { title: 'Gennaio: il vigneto dorme, la cantina lavora',
+        desc: 'La potatura invernale delle viti è appena cominciata — gesti lenti e precisi che decidono già la qualità della prossima vendemmia. In cantina il vino nuovo riposa nel silenzio dell\'inverno.' },
+  2:  { title: 'Febbraio: gli ultimi freddi, la terra si prepara',
+        desc: 'Si continua a potare, si prepara la terra per la semina di marzo. È il mese più silenzioso dell\'anno in campagna, ma il lavoro non si ferma mai.' },
+  3:  { title: 'Marzo: la campagna si risveglia',
+        desc: 'Le prime gemme sui filari, la semina dei cereali antichi, i primi tepori di sole sull\'orto. Dopo l\'inverno, la terra ricomincia a muoversi.' },
+  4:  { title: 'Aprile: profumo di primavera',
+        desc: 'L\'orto riparte, la vigna mette le prime foglie, il ristorante si prepara a riaprire la terrazza. È la stagione dei primi colori dopo il grigio dell\'inverno.' },
+  5:  { title: 'Maggio: le prime sere in terrazza',
+        desc: 'Le giornate si allungano, la terrazza si riempie la sera, i filari sono verdissimi. Il Chianti a maggio è nella sua versione più fresca e luminosa.' },
+  6:  { title: 'Giugno: l\'orto è nel pieno',
+        desc: 'Pomodori, zucchine, basilico: l\'orto dà tutto quello che ha. È il mese in cui la cucina segue davvero la terra giorno per giorno.' },
+  7:  { title: 'Luglio: il caldo che matura l\'uva',
+        desc: 'Le cicale, il sole pieno, i grappoli che iniziano a farsi pesanti sui filari. È il mese dell\'attesa silenziosa prima della vendemmia.' },
+  8:  { title: 'Agosto: l\'uva cambia colore',
+        desc: 'È il momento dell\'invaiatura: gli acini passano dal verde al colore che avranno da maturi. In campagna si lavora anche ad agosto, mentre tutto intorno rallenta.' },
+  9:  { title: 'Settembre: è tempo di vendemmia',
+        desc: 'Il momento più intenso dell\'anno: le mani viola d\'uva, il profumo di mosto in cantina, le giornate che iniziano all\'alba. Tre generazioni fanno questo lavoro da sempre, nello stesso modo.' },
+  10: { title: 'Ottobre: finita la vendemmia, iniziano le olive',
+        desc: 'Il vino nuovo fermenta in cantina, e gli ulivi cominciano a colorarsi in vista della raccolta di novembre. L\'autunno in Chianti è due raccolti che si passano il testimone.' },
+  11: { title: 'Novembre: le olive, il freddo, l\'olio nuovo',
+        desc: 'La raccolta delle olive è breve e intensa: si lavora in fretta perché il frutto non aspetta. Il primo olio dell\'anno arriva proprio in questi giorni.' },
+  12: { title: 'Dicembre: la cantina riposa, la famiglia si ritrova',
+        desc: 'I lavori nei campi rallentano, il vino dell\'annata appena raccolta riposa, e la tavola si prepara per le feste. È il mese in cui il lavoro dell\'anno intero arriva a tavola.' },
+};
+
 // PIATTO DEL MESE — cucina toscana stagionale del Ciliegio
 const PIATTO_PLAN = {
   1:  { title: 'Ribollita',
@@ -737,11 +785,11 @@ const PIATTO_PLAN = {
   2:  { title: 'Pici cacio e pepe',
         desc: 'Pasta fresca tirata a mano, il piatto romantico per eccellenza del Chianti: pici grossi fatti a mano con semola di grano antico, pecorino di stagione e pepe macinato al momento',
         pillar: 'ristorante' },
-  3:  { title: 'Acquacotta',
-        desc: 'La zuppa contadina di primavera: erbe di campo, cipolla, pomodori, uovo affogato e pane raffermo con olio EVO del Ciliegio — un piatto povero che racconta la terra senese',
+  3:  { title: 'Trippa alla senese',
+        desc: 'Trippa tagliata sottile, cotta con fagioli, pomodoro e un trito di odori: un secondo della cucina povera senese, servito ancora oggi nelle case e nelle trattorie di Siena — genuino, robusto, senza fronzoli',
         pillar: 'ristorante' },
-  4:  { title: 'Agnello al forno con patate novelle',
-        desc: 'Il protagonista delle tavole pasquali toscane: agnello locale con patate novelle, rosmarino e vino bianco — cotto lentamente nel forno a legna e servito con i nostri legumi di stagione',
+  4:  { title: 'Arista di Cinta Senese al forno',
+        desc: 'Il lombo della Cinta Senese, la razza suina autoctona delle colline senesi (DOP, Presidio Slow Food), arrostito con rosmarino, aglio e un filo di vino bianco — la carne che più di ogni altra racconta il territorio di Siena',
         pillar: 'ristorante' },
   5:  { title: 'Bruschetta con olio nuovo e verdure di stagione',
         desc: 'La semplicità che vale più di tante ricette elaborate: pane di farro del Ciliegio tostato sulla brace, strofinato d\'aglio, bagnato di olio EVO e coperto di verdure dell\'orto di stagione',
@@ -764,8 +812,8 @@ const PIATTO_PLAN = {
   11: { title: 'Bistecca alla Fiorentina con fagioli all\'uccelletto',
         desc: 'Il grande piatto toscano: bistecca di Chianina (o locale) su brace viva, con i nostri fagioli borlotti all\'uccelletto con salvia e olio EVO — abbinamento con il Chianti Classico del Ciliegio',
         pillar: 'ristorante' },
-  12: { title: 'Cappelletti in brodo',
-        desc: 'La pasta ripiena delle feste toscane: sfoglia di grano antico, ripieno di carne e parmigiano, serviti in brodo di cappone fatto in casa — il piatto della tradizione natalizia al Ciliegio',
+  12: { title: 'Panforte di Siena',
+        desc: 'Il dolce senese per eccellenza: miele, mandorle, canditi e spezie in un impasto che si tramanda quasi identico da secoli — il modo più autentico di chiudere l\'anno e augurare buone feste ai nostri ospiti',
         pillar: 'ristorante' },
 };
 
@@ -818,6 +866,70 @@ const REMINDER_ANGLES = [
   'Nel corpo del post, apri con una domanda o una curiosità sul piatto forte della settimana, poi rivela che la risposta è nel menù online',
 ];
 
+// Categorie foto (archivio Dropbox, valori già lowercase come da path_lower) abbinate ai due
+// tagli alternati del reminder del lunedì: RISTORANTE (menù/piatti/sala) e GENERICO (vita e
+// atmosfera dell'azienda, non il menù). Cantina-Vino è esclusa: riservata ai post sul pilastro Vino.
+const REMINDER_PHOTO_GROUPS = {
+  ristorante: ['cibo-tavola', 'sale-eventi'],
+  generico:   ['panorami-esterni', 'persone-vitaquotidiana', 'storia-famiglia', 'feste-eventi']
+};
+
+// Categorie foto per pillar (archivio Dropbox), usate per "Prodotto del mese" e "What's Next":
+// a differenza del reminder non alternano un taglio, dipendono direttamente dal pillar del post.
+// 'prodotti' è una cartella da creare in Dropbox con le foto reali dei prodotti (vino escluso,
+// che ha già Cantina-Vino).
+const PILLAR_PHOTO_CATS = {
+  ristorante: ['cibo-tavola', 'sale-eventi'],
+  vino:       ['cantina-vino'],
+  olio:       ['prodotti'],
+  shop:       ['prodotti'],
+  azienda:    ['panorami-esterni', 'persone-vitaquotidiana', 'storia-famiglia', 'feste-eventi']
+};
+
+// Categorie foto per "Stagionalità del mese", una per ciascuna delle 5 fasce di SEASON_HINTS.
+const SEASON_PHOTO_CATS = [
+  ['cantina-vino', 'panorami-esterni'],    // Gen-Mar
+  ['panorami-esterni'],                     // Apr-Giu
+  ['panorami-esterni'],                     // Lug-Ago
+  ['cantina-vino', 'panorami-esterni'],    // Set-Ott
+  ['panorami-esterni', 'storia-famiglia']  // Nov-Dic
+];
+
+// Cartella dedicata da creare in Dropbox con una foto per ciascuno dei 12 piatti di PIATTO_PLAN
+// (idealmente nominate in ordine, cosí la prima in ordine alfabetico corrisponde a gennaio ecc).
+const PIATTO_PHOTO_CATEGORY = 'piatti-mese';
+
+// Sceglie una foto da un elenco di categorie, ruotando in modo deterministico in base a un indice
+// (tipicamente il numero del mese): così la stessa foto non ricompare ogni volta che il taglio si ripete.
+function pickCategoryPhoto(categories, occurrenceIndex, allPhotos) {
+  const pool = allPhotos.filter(ph => categories.includes(ph.category))
+                         .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
+  return pool.length ? pool[occurrenceIndex % pool.length] : null;
+}
+
+// Sceglie la foto reale da abbinare a un post ricorrente (piatto/prodotto/stagionalità/what's next)
+// in base al suo formato. Ritorna null se non c'è una foto adatta — in quel caso l'AI suggerisce
+// un'idea a parole (vedi generateSinglePost).
+function pickPhotoForPost(p, allPhotos) {
+  const d = parsePostDate(p);
+  if (!d) return null;
+  const monthNum = d.month + 1;
+  if (p.format === 'piatto') {
+    const pool = allPhotos.filter(ph => ph.category === PIATTO_PHOTO_CATEGORY)
+                           .sort((a, b) => a.name.localeCompare(b.name));
+    return pool.length ? pool[(monthNum - 1) % pool.length] : null;
+  }
+  if (p.format === 'stagionalita') {
+    const bandIdx = monthNum <= 3 ? 0 : monthNum <= 6 ? 1 : monthNum <= 8 ? 2 : monthNum <= 10 ? 3 : 4;
+    return pickCategoryPhoto(SEASON_PHOTO_CATS[bandIdx], monthNum, allPhotos);
+  }
+  if (p.format === 'scheda-tecnica' || p.format === 'whatsnext') {
+    const cats = PILLAR_PHOTO_CATS[p.pillar];
+    return cats ? pickCategoryPhoto(cats, monthNum, allPhotos) : null;
+  }
+  return null;
+}
+
 // Suffissi stagionali mostrati nel menu "Mese di pubblicazione" del generatore
 // (solo testo informativo, non influenzano il parsing della data).
 const MONTH_SUFFIXES = { 8: ' – Vendemmia', 9: ' – Raccolta olive', 11: ' – Natale' };
@@ -838,10 +950,11 @@ function buildMonthOptions(withSuffix) {
 }
 
 const RECURRING_TYPES = {
-  reminder: { icon: '📋', label: 'Reminder menù',   cls: 'tag-reminder' },
-  piatto:   { icon: '🎬', label: 'Piatto del mese',  cls: 'tag-piatto' },
-  prodotto: { icon: '📦', label: 'Prodotto del mese',cls: 'tag-prodotto' },
-  tematico: { icon: '📰', label: 'Post tematico',    cls: 'tag-tematico' },
+  reminder:  { icon: '📋', label: 'Reminder menù',         cls: 'tag-reminder' },
+  piatto:    { icon: '🍽️', label: 'Piatto del mese',       cls: 'tag-piatto' },
+  prodotto:  { icon: '📦', label: 'Prodotto del mese',     cls: 'tag-prodotto' },
+  tematico:  { icon: '🌿', label: 'Stagionalità del mese', cls: 'tag-tematico' },
+  whatsnext: { icon: '🔭', label: 'What\'s Next?',         cls: 'tag-azienda' },
 };
 
 function makeRecurringPost(type, date) {
@@ -859,7 +972,7 @@ function makeRecurringPost(type, date) {
     case 'piatto': {
       const p = PIATTO_PLAN[date.getMonth() + 1];
       title = p.title; desc = p.desc; pillar = p.pillar;
-      platforms = ['fb','ig']; format = 'video';
+      platforms = ['fb','ig']; format = 'piatto';
       break;
     }
     case 'prodotto': {
@@ -869,9 +982,15 @@ function makeRecurringPost(type, date) {
       break;
     }
     case 'tematico': {
+      const s = STAGIONALITA_PLAN[date.getMonth() + 1];
+      title = s.title; desc = s.desc; pillar = 'azienda';
+      platforms = ['fb','ig']; format = 'stagionalita';
+      break;
+    }
+    case 'whatsnext': {
       const t = THEMATIC_PLAN[date.getMonth() + 1];
       title = t.title; desc = t.desc; pillar = t.pillar;
-      platforms = ['fb','ig']; format = 'tematico';
+      platforms = ['fb','ig']; format = 'whatsnext';
       break;
     }
   }
@@ -892,8 +1011,8 @@ function generateRecurringPosts() {
   const satStart= new Date(RECURRING_SAT_START + 'T00:00:00');
   const end     = new Date(RECURRING_END       + 'T00:00:00');
 
-  // Ciclo continuo sabati: piatto → tematico → prodotto → (vuoto) → riparti
-  const SAT_ROLES = ['piatto', 'tematico', 'prodotto', null];
+  // Ciclo continuo sabati: piatto → stagionalità → prodotto → what's next → riparti
+  const SAT_ROLES = ['piatto', 'tematico', 'prodotto', 'whatsnext'];
   let satIdx = 0;
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -901,8 +1020,7 @@ function generateRecurringPosts() {
     if (dow === 1) {
       posts.push(makeRecurringPost('reminder', new Date(d)));
     } else if (dow === 6 && d >= satStart) {
-      const role = SAT_ROLES[satIdx % 4];
-      if (role !== null) posts.push(makeRecurringPost(role, new Date(d)));
+      posts.push(makeRecurringPost(SAT_ROLES[satIdx % 4], new Date(d)));
       satIdx++;
     }
   }
@@ -2063,16 +2181,21 @@ async function generateMonthContent() {
     showToast(`ℹ️ Nessun post in programma per ${monthLabel}`);
     return;
   }
-  if (!confirm(`Generare i testi FB/IG per i ${monthPosts.length} post di ${monthLabel}? I testi esistenti verranno sovrascritti.`)) return;
+  const hasRecurring = monthPosts.some(p => p.recurringType);
+  const overwriteMsg = hasRecurring
+    ? `Generare i testi FB/IG per i ${monthPosts.length} post di ${monthLabel}? I testi esistenti verranno sovrascritti (per i post ricorrenti — reminder, piatto, stagionalità, prodotto, what's next — anche la foto assegnata automaticamente dall'archivio).`
+    : `Generare i testi FB/IG per i ${monthPosts.length} post di ${monthLabel}? I testi esistenti verranno sovrascritti.`;
+  if (!confirm(overwriteMsg)) return;
 
   showToast(`⏳ Generazione testi per ${monthLabel} (${monthPosts.length} post)...`);
 
   try {
     const reminders = monthPosts.filter(p => p.recurringType === 'reminder');
     const others    = monthPosts.filter(p => p.recurringType !== 'reminder');
+    const allPhotos = (await listDropboxPhotos()) || [];
 
-    if (reminders.length) await generateReminderBatch(reminders, monthLabel);
-    for (const p of others) await generateSinglePost(p);
+    if (reminders.length) await generateReminderBatch(reminders, monthLabel, allPhotos);
+    for (const p of others) await generateSinglePost(p, allPhotos);
 
     saveToStorage();
     showView('calendar');
@@ -2084,10 +2207,41 @@ async function generateMonthContent() {
   }
 }
 
-async function generateReminderBatch(reminders, monthLabel) {
-  const items = reminders.map((p, i) => {
-    const angle = REMINDER_ANGLES[i % REMINDER_ANGLES.length];
-    return `${i + 1}. Data: ${p.date} — variazione: ${angle}`;
+// Indice della settimana del reminder rispetto al primo lunedì (RECURRING_START): alterna
+// deterministicamente il taglio (pari→ristorante, dispari→generico) e fa ruotare le foto
+// disponibili nella categoria del taglio senza ripeterle finché il pool non è esaurito.
+function reminderWeekIndex(dateStr) {
+  const start = new Date(RECURRING_START + 'T00:00:00');
+  const d     = new Date(dateStr + 'T00:00:00');
+  return Math.round((d - start) / (7 * 24 * 3600 * 1000));
+}
+
+// Sceglie il taglio (ristorante/generico) e la foto reale dall'archivio da abbinare a un
+// post reminder. allPhotos viene da listDropboxPhotos() — se vuoto/non disponibile, ritorna
+// photo: null e il chiamante ricade sul vecchio suggerimento testuale generato dall'AI.
+function pickReminderPhoto(p, allPhotos) {
+  const m       = p.id.match(/^r_(\d{4}-\d{2}-\d{2})_/);
+  const weekIdx = m ? reminderWeekIndex(m[1]) : 0;
+  const flavor  = weekIdx % 2 === 0 ? 'ristorante' : 'generico';
+  const cats    = REMINDER_PHOTO_GROUPS[flavor];
+  const pool    = allPhotos.filter(ph => cats.includes(ph.category))
+                            .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
+  if (!pool.length) return { flavor, photo: null };
+  const occurrence = Math.floor(weekIdx / 2);
+  return { flavor, photo: pool[occurrence % pool.length] };
+}
+
+async function generateReminderBatch(reminders, monthLabel, allPhotos = []) {
+  const picks = reminders.map((p, i) => ({ p, angle: REMINDER_ANGLES[i % REMINDER_ANGLES.length], ...pickReminderPhoto(p, allPhotos) }));
+
+  const items = picks.map(({ p, angle, flavor, photo }, i) => {
+    const tagline = flavor === 'ristorante'
+      ? 'RISTORANTE — parla del menù, di un piatto o di un ingrediente della settimana'
+      : 'GENERICO — racconta la vita e l\'atmosfera dell\'azienda (non il menù): un momento, un dettaglio del lavoro o del territorio';
+    const photoLine = photo
+      ? `foto reale abbinata: categoria "${photo.category.replace(/-/g, ' ')}" — il testo deve nascere da questa ambientazione, non il contrario`
+      : 'nessuna foto reale disponibile: suggerisci un\'idea di foto pratica e coerente nel campo "foto"';
+    return `${i + 1}. Data: ${p.date} — taglio: ${tagline} — ${photoLine} — variazione di tono: ${angle}`;
   }).join('\n');
 
   const seasonHint = seasonHintFor(monthLabel);
@@ -2100,56 +2254,75 @@ Devi scrivere ${reminders.length} post "Reminder menù della settimana" per ${mo
 FORMAT OBBLIGATORIO PER OGNI POST (rispettalo sempre):
 1. Apertura FISSA: inizia SEMPRE con "Ovvia mimmi!" (espressione toscana tipica, vuol dire "ragazzi, adesso ci siamo!" — tono caldo e diretto)
 2. Annuncio: i menù della settimana sono aggiornati online su https://www.ilciliegio.com/it/ristorante
-3. Frase di storytelling stagionale (tipo "la nostra cucina si racconta attraverso i prodotti di stagione!" — varia ogni volta, mantienila autentica e toscana)
+3. Frase di storytelling stagionale, ispirata al taglio e alla foto indicati per quel post (varia ogni volta, mantienila autentica e toscana)
 4. Chiusura: invito a prenotare o a visitare il sito
 
-Per variare tra i post usa la "variazione" indicata per ciascuna data (cambia il focus del corpo, non l'apertura fissa).
+Per questo formato settimanale ALLEGGERISCI le regole generali di lunghezza: Facebook max 100-130 parole, Instagram max 60-80 parole. Resta su concetti semplici, ampi e riconoscibili (es. "pomodori", non "pomodori cuore di bue"): i dettagli iper specifici rischiano di essere imprecisi o fuorvianti raccontando qualcosa che magari non è vero. Meno testo, ma più efficace.
 
-Date e variazioni:
+Ogni post è pensato per essere pubblicato insieme a una foto reale dell'archivio aziendale (o a un suggerimento, se non disponibile): il contenuto deve partire da lì, non essere generico. Usa la "variazione di tono" solo per cambiare taglio narrativo/apertura del corpo, non l'apertura fissa "Ovvia mimmi!".
+
+Date, tagli e foto:
 ${items}
 
-Per ogni post suggerisci anche una foto specifica da scattare o cercare nell'archivio (es. "esterno del ristorante al tramonto", "primo piano di un piatto stagionale", "vigneto con luce mattutina", ecc.) — pratica, realistica, coerente con il periodo.
-
 Rispondi ESCLUSIVAMENTE in JSON con un array di ${reminders.length} oggetti, nello stesso ordine delle date, formato:
-[{ "facebook": "testo FB", "instagram": "testo IG", "foto": "suggerimento foto" }, ...]`;
+[{ "facebook": "testo FB", "instagram": "testo IG", "foto": "suggerimento foto — valorizzalo solo se non è stata indicata una foto reale" }, ...]`;
 
-  const maxTokens = Math.min(6000, 800 * reminders.length + 300);
+  const maxTokens = Math.min(6000, 700 * reminders.length + 300);
   const arr = await callClaude(prompt, maxTokens);
-  reminders.forEach((p, i) => {
-    p.fbText     = arr[i]?.facebook  || '';
-    p.igText     = arr[i]?.instagram || '';
-    p.photoHint  = arr[i]?.foto      || '';
-    p.status     = 'ready';
+  picks.forEach(({ p, photo }, i) => {
+    p.fbText    = arr[i]?.facebook  || '';
+    p.igText    = arr[i]?.instagram || '';
+    if (photo) {
+      p.photoFile = photo.path_lower;
+      p.photoName = photo.name;
+      p.photoHint = '';
+    } else {
+      p.photoHint = arr[i]?.foto || '';
+    }
+    p.status    = 'ready';
   });
 }
 
 const FORMAT_HINTS = {
-  video:           'Questo contenuto è un video autoprodotto della preparazione del piatto: scrivi una caption che introduce il video, racconta il piatto e invita a guardarlo.',
-  'scheda-tecnica':'Questo contenuto presenta il prodotto del mese: descrivilo (origine, lavorazione) e suggerisci in modo naturale 1-2 abbinamenti (vino, pane, farina, legumi, ricette).',
-  tematico:        'Questo è il post tematico del mese, legato alla stagionalità del periodo.',
+  piatto:          'Piatto della tradizione toscana, senza ricetta passo-passo e senza dettagli iper specifici (es. "pomodori", non una varietà precisa: rischi di raccontare qualcosa di impreciso). Poche righe che parlano di ingredienti semplici e riconoscibili, genuinità e bontà del piatto — un testo che fa venire fame e fiducia, non un procedimento di cucina.',
+  'scheda-tecnica':'Questo contenuto presenta il prodotto del mese: poche righe semplici e accattivanti su cosa lo rende speciale, non una scheda tecnica esaustiva. Niente elenchi di caratteristiche: deve essere intrigante e bello da leggere, non un catalogo.',
+  stagionalita:    'Post breve e concettuale sulla stagionalità della campagna in questo preciso mese (non un evento futuro, non una ricetta): il ritmo del lavoro nei campi o in cantina, un dettaglio sensoriale del periodo. Poco testo, ma che appassioni.',
+  whatsnext:       'Post "What\'s Next": crea aspettativa per il mese prossimo, anticipando con leggerezza cosa sta per arrivare (un evento, un prodotto, un momento stagionale). Tono invitante, informale, quasi complice — non una scheda informativa.',
   reminder:        'Questo post annuncia che il menù della settimana è online e invita a scoprirlo/prenotare.',
 };
 
-async function generateSinglePost(p) {
-  const hint = FORMAT_HINTS[p.format] || '';
+async function generateSinglePost(p, allPhotos = []) {
+  const hint  = FORMAT_HINTS[p.format] || '';
+  const photo = pickPhotoForPost(p, allPhotos);
+  const photoLine = photo
+    ? `\n\nQuesto post sarà pubblicato con una foto reale dell'archivio aziendale, categoria "${photo.category.replace(/-/g, ' ').replace(/\//g, ' / ')}": il testo deve nascere da questa ambientazione, restando su concetti semplici e generali.`
+    : '';
+
   const prompt = `${BUSINESS_INTRO}
 
 ${buildStyleContext()}${buildCalibrationContext(p.pillar, p.month)}
 
 Crea due versioni di post social per "${p.title}".
 Descrizione/contesto: ${p.desc}
-${hint}
+${hint}${photoLine}
 Tono: ${STATE.settings.tone}
 
 Rispondi ESCLUSIVAMENTE in JSON con questo formato (nessun testo fuori dal JSON):
 {
   "facebook": "testo completo per Facebook",
-  "instagram": "testo per Instagram"
+  "instagram": "testo per Instagram"${photo ? '' : ',\n  "foto": "suggerimento pratico di una foto da scattare o cercare nell\'archivio"'}
 }`;
 
   const obj = await callClaude(prompt);
   p.fbText = obj.facebook || '';
   p.igText = obj.instagram || '';
+  if (photo) {
+    p.photoFile = photo.path_lower;
+    p.photoName = photo.name;
+    p.photoHint = '';
+  } else if (obj.foto) {
+    p.photoHint = obj.foto;
+  }
   p.status = 'ready';
 }
 
