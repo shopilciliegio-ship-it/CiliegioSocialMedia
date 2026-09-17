@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.12.1',
+    version: '2.13.0',
     date: '2026-09-17',
     current: true,
+    description: 'Due fix reali sulla grafica IG: (1) il font Titan One non veniva mai usato dal canvas perché il webfont non era pronto quando si scriveva il testo (fillText/strokeText non aspettano il caricamento) — ora si aspetta esplicitamente document.fonts.load()/ready prima di disegnare; (2) logo rimesso dentro un badge tondo in alto a destra, ma colorato con lo stesso colore della scritta di quella settimana invece che bianco (il file del logo ha la scritta "IL CILIEGIO AZIENDA AGRICOLA" in bianco, invisibile su sfondo bianco — è il motivo per cui Luca lo escludeva). Nel badge si vede solo lo stemma dorato (ritagliata la scritta, illeggibile a quella scala).'
+  },
+  {
+    version: '2.12.1',
+    date: '2026-09-17',
+    current: false,
     description: 'Font della grafica IG cambiato in Titan One (scelto da Luca tra 4 opzioni proposte: Baloo 2, Bungee, Titan One, Archivo Black) — bold, energico, con un tocco fumettoso ma non dozzinale.'
   },
   {
@@ -2641,6 +2647,9 @@ async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
 ═══════════════════════════════════════════════ */
 const IG_GRAPHIC_W = 1080, IG_GRAPHIC_H = 1350; // formato feed IG 4:5
 const IG_LOGO_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/ciliegio_trasparente.png';
+// Frazione superiore del file logo occupata dal solo stemma dorato (il resto è la
+// scritta "IL CILIEGIO AZIENDA AGRICOLA", illeggibile a scala badge — va ritagliata).
+const IG_LOGO_ICON_CUT = 0.64;
 
 // Palette settimanale: un colore diverso a rotazione (stesso indice della foto,
 // non un colore a caso ad ogni generazione) — toni caldi coerenti col brand.
@@ -2696,6 +2705,12 @@ const IG_GRAPHIC_TITOLO = 'Ovvia mimmi!';
 // Disegna la grafica IG (foto cover-fit + scrim + logo + titolo bold colorato
 // con contorno scuro per leggibilità) su un canvas offscreen.
 async function disegnaGraficaIG(photoBlob, titolo, colore) {
+  // Il font va caricato ESPLICITAMENTE prima di scrivere sul canvas: fillText/strokeText
+  // non aspettano un webfont non ancora pronto, cadono in silenzio sul font di sistema
+  // senza errore (bug reale riscontrato: sembrava "il font sbagliato" ma era questo).
+  await document.fonts.load('96px "Titan One"');
+  await document.fonts.ready;
+
   const imgUrl = URL.createObjectURL(photoBlob);
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
@@ -2719,19 +2734,27 @@ async function disegnaGraficaIG(photoBlob, titolo, colore) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, IG_GRAPHIC_H * 0.45, IG_GRAPHIC_W, IG_GRAPHIC_H * 0.55);
 
-  // Logo in alto a destra, direttamente sulla foto (niente badge bianco dietro —
-  // tolto su richiesta di Luca), solo un'ombra per staccarlo dallo sfondo.
+  // Logo in alto a destra, dentro un badge tondo — colorato con lo stesso colore
+  // della scritta "Ovvia mimmi!" di questa settimana (mai bianco, su richiesta di
+  // Luca). Il file originale ha anche la scritta "IL CILIEGIO AZIENDA AGRICOLA"
+  // sotto lo stemma dorato: a scala badge sarebbe illeggibile, quindi qui si
+  // ritaglia solo lo stemma (~64% superiore dell'immagine, vedi IG_LOGO_ICON_CUT).
   const logo = await _loadIgLogo();
   if (logo) {
-    const logoW = 200;
-    const logoScale = logoW / logo.width;
-    const lw = logo.width * logoScale, lh = logo.height * logoScale;
-    const lx = IG_GRAPHIC_W - 64 - lw, ly = 64;
+    const badgeR = 90, badgeCx = IG_GRAPHIC_W - 64 - badgeR, badgeCy = 64 + badgeR;
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 14;
-    ctx.drawImage(logo, lx, ly, lw, lh);
+    ctx.beginPath();
+    ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+    ctx.fillStyle = colore;
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 16;
+    ctx.fill();
     ctx.restore();
+    const sw = logo.width, sh = logo.height * IG_LOGO_ICON_CUT;
+    const logoSize = badgeR * 1.5;
+    const logoScale = Math.min(logoSize / sw, logoSize / sh);
+    const lw = sw * logoScale, lh = sh * logoScale;
+    ctx.drawImage(logo, 0, 0, sw, sh, badgeCx - lw / 2, badgeCy - lh / 2, lw, lh);
   }
 
   // Titolo: font bold ed energico (Titan One, scelto da Luca), riempimento colorato a rotazione
