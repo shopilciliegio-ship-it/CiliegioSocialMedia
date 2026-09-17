@@ -402,7 +402,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 <!-- Font per la grafica IG (overlay bold su foto, vedi generaGraficaIG) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.10.0',
+    version: '2.11.0',
     date: '2026-09-17',
     current: true,
+    description: 'Grafica IG rivista su feedback di Luca: font cambiato da Anton (troppo "a bastoni", bianco e anonimo) a Fredoka, più giocoso e bold senza scadere nel Comic Sans. Il titolo ora ha un colore diverso a rotazione settimanale (10 colori del brand, stesso indice della foto — non casuale, riproducibile), con contorno scuro per restare leggibile su qualsiasi foto. Aggiunto il logo del Ciliegio (già esistente su GitHub, riusato da Ciliegio-Menu) in alto a sinistra su un badge chiaro, ben visibile su qualunque sfondo.'
+  },
+  {
+    version: '2.10.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Prima versione della grafica IG: bottone "🖼️ Genera grafica IG" nel dettaglio di ogni reminder con foto, genera al volo (Canvas 2D, niente servizi esterni) un\'immagine 1080×1350 con la foto e un titolo bold in overlay stile "Icche si fà?" (font Anton + sottotitolo "IL CILIEGIO" in Oswald, scrim scuro sul fondo per leggibilità). Solo anteprima/download per ora (non ancora caricata automaticamente da nessuna parte, non ancora usata nel publish). Il titolo è provvisorio (derivato dal nome file) finché non scriviamo insieme i titoli definitivi per le 55 foto.'
   },
   {
@@ -2607,11 +2613,47 @@ async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
 }
 
 /* ═══════════════════════════════════════════════
-   GRAFICA IG — foto + testo bold overlay (stile "Icche si fà?"), generata
-   interamente lato client con Canvas 2D. Solo Instagram: Facebook resta
-   foto pulita + caption lunga, il grid coerente conta solo sul feed IG.
+   GRAFICA IG — foto + testo bold colorato + logo overlay (stile "Icche si
+   fà?"), generata interamente lato client con Canvas 2D. Solo Instagram:
+   Facebook resta foto pulita + caption lunga, il grid coerente conta solo
+   sul feed IG. Colore diverso ogni settimana (rotazione fissa, stesso
+   indice della foto — riproducibile, non casuale) su richiesta di Luca:
+   il font "a bastoni" bianco/anonimo (Anton) non piaceva, voleva qualcosa
+   di più giocoso/colorato ma senza scadere nel Comic Sans.
 ═══════════════════════════════════════════════ */
 const IG_GRAPHIC_W = 1080, IG_GRAPHIC_H = 1350; // formato feed IG 4:5
+const IG_LOGO_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/ciliegio_trasparente.png';
+
+// Palette settimanale: un colore diverso a rotazione (stesso indice della foto,
+// non un colore a caso ad ogni generazione) — toni caldi coerenti col brand.
+const IG_GRAPHIC_COLORS = [
+  '#E8552F', // terracotta
+  '#1D9E75', // verde Ciliegio
+  '#BA7517', // ambra/oro
+  '#993C1D', // vino/rame
+  '#185FA5', // blu profondo
+  '#C9302C', // rosso ciliegia
+  '#534AB7', // viola
+  '#0F6E56', // verde scuro
+  '#D68910', // senape
+  '#993556', // bordeaux/rosa scuro
+];
+function _coloreGraficaPerIndice(idx) {
+  return IG_GRAPHIC_COLORS[((idx % IG_GRAPHIC_COLORS.length) + IG_GRAPHIC_COLORS.length) % IG_GRAPHIC_COLORS.length];
+}
+
+let _igLogoImg = null;
+function _loadIgLogo() {
+  if (_igLogoImg) return _igLogoImg;
+  _igLogoImg = new Promise((resolve) => {
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null); // logo non essenziale: se fallisce si genera comunque senza
+    im.src = IG_LOGO_URL;
+  });
+  return _igLogoImg;
+}
 
 // Scarica il file immagine vero (non la thumbnail) da Dropbox come Blob.
 async function downloadDropboxImageBlob(path) {
@@ -2631,15 +2673,15 @@ async function downloadDropboxImageBlob(path) {
 
 // Titolo grafico provvisorio derivato dal nome file, finché non scriviamo insieme
 // a Luca i titoli definitivi (campo p.titoloGrafica in FOTO_ROTAZIONE) — serve solo
-// a validare lo stile (font/layout) sulle prime prove.
+// a validare lo stile (font/layout/colore) sulle prime prove.
 function _titoloGraficaProvvisorio(file) {
   const base = file.replace(/^\d+\s*/, '').replace(/\.\w+$/, '').replace(/-/g, ' ');
   return base.split(' ').slice(0, 3).join(' ').toUpperCase();
 }
 
-// Disegna la grafica IG (foto cover-fit + scrim scuro sul fondo + titolo bold e
-// sottotitolo) su un canvas offscreen e lo ritorna.
-async function disegnaGraficaIG(photoBlob, titolo, sottotitolo) {
+// Disegna la grafica IG (foto cover-fit + scrim + logo + titolo bold colorato
+// con contorno scuro per leggibilità + sottotitolo) su un canvas offscreen.
+async function disegnaGraficaIG(photoBlob, titolo, sottotitolo, colore) {
   const imgUrl = URL.createObjectURL(photoBlob);
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
@@ -2659,15 +2701,36 @@ async function disegnaGraficaIG(photoBlob, titolo, sottotitolo) {
   // Scrim scuro graduale sul fondo, per leggibilità del testo su qualunque foto
   const grad = ctx.createLinearGradient(0, IG_GRAPHIC_H * 0.45, 0, IG_GRAPHIC_H);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.8)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, IG_GRAPHIC_H * 0.45, IG_GRAPHIC_W, IG_GRAPHIC_H * 0.55);
 
+  // Logo in alto a sinistra, ben visibile su un badge chiaro tondo (funziona
+  // sopra qualunque foto, anche quelle molto chiare dove il logo trasparente
+  // da solo sparirebbe).
+  const logo = await _loadIgLogo();
+  if (logo) {
+    const badgeR = 90, badgeCx = 64 + badgeR, badgeCy = 64 + badgeR;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.restore();
+    const logoSize = badgeR * 1.5;
+    const logoScale = Math.min(logoSize / logo.width, logoSize / logo.height);
+    const lw = logo.width * logoScale, lh = logo.height * logoScale;
+    ctx.drawImage(logo, badgeCx - lw / 2, badgeCy - lh / 2, lw, lh);
+  }
+
+  // Titolo: font giocoso e bold (Fredoka), riempimento colorato a rotazione
+  // settimanale, contorno scuro spesso per restare leggibile su qualsiasi foto.
   const pad = 64;
   const maxW = IG_GRAPHIC_W - pad * 2;
-  ctx.fillStyle = '#fff';
   ctx.textBaseline = 'alphabetic';
-  ctx.font = `86px Anton, sans-serif`;
+  ctx.font = `700 96px Fredoka, sans-serif`;
   const words = titolo.toUpperCase().split(' ');
   const lines = [];
   let line = '';
@@ -2678,13 +2741,24 @@ async function disegnaGraficaIG(photoBlob, titolo, sottotitolo) {
   });
   if (line) lines.push(line);
 
-  const lineH = 90;
-  let y = IG_GRAPHIC_H - pad - (sottotitolo ? 56 : 0) - (lines.length - 1) * lineH;
-  lines.forEach(l => { ctx.fillText(l, pad, y); y += lineH; });
+  const lineH = 100;
+  let y = IG_GRAPHIC_H - pad - (sottotitolo ? 58 : 0) - (lines.length - 1) * lineH;
+  ctx.lineJoin = 'round';
+  lines.forEach(l => {
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText(l, pad, y);
+    ctx.fillStyle = colore;
+    ctx.fillText(l, pad, y);
+    y += lineH;
+  });
 
   if (sottotitolo) {
-    ctx.font = `600 34px Oswald, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = `600 36px Fredoka, sans-serif`;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText(sottotitolo.toUpperCase(), pad, IG_GRAPHIC_H - pad + 10);
+    ctx.fillStyle = '#fff';
     ctx.fillText(sottotitolo.toUpperCase(), pad, IG_GRAPHIC_H - pad + 10);
   }
 
@@ -2700,7 +2774,12 @@ async function generaGraficaIG(id) {
   try {
     const blob   = await downloadDropboxImageBlob(p.photoFile);
     const titolo = p.titoloGrafica || _titoloGraficaProvvisorio(p.photoName || '');
-    const canvas = await disegnaGraficaIG(blob, titolo, 'Il Ciliegio');
+    // Indice per la rotazione colore: numero della foto se è un reminder (rotazione
+    // fissa nota), altrimenti un indice stabile derivato dall'id del post.
+    const rot = FOTO_ROTAZIONE.find(r => `${DROPBOX_PHOTO_FOLDER}/${r.file}`.toLowerCase() === p.photoFile);
+    const idx = rot ? rot.numero : [...p.id].reduce((a,c) => a + c.charCodeAt(0), 0);
+    const colore = _coloreGraficaPerIndice(idx);
+    const canvas = await disegnaGraficaIG(blob, titolo, 'Il Ciliegio', colore);
     const container = document.getElementById('ig-graphic-preview');
     if (!container) return;
     container.innerHTML = '';
