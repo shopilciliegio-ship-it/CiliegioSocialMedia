@@ -402,7 +402,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 <!-- Font per la grafica IG (overlay bold su foto, vedi generaGraficaIG) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Titan+One&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.12.0',
+    version: '2.12.1',
     date: '2026-09-17',
     current: true,
+    description: 'Font della grafica IG cambiato in Titan One (scelto da Luca tra 4 opzioni proposte: Baloo 2, Bungee, Titan One, Archivo Black) — bold, energico, con un tocco fumettoso ma non dozzinale.'
+  },
+  {
+    version: '2.12.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Grafica IG: rimosso il badge bianco dietro al logo (Luca non lo vuole su sfondo bianco), logo spostato in alto a destra e disegnato direttamente sulla foto con solo un\'ombra. Rimossa la scritta "Il Ciliegio" in basso. Font ancora da rivedere (Fredoka scartato) — in attesa della scelta di Luca da una lista o di un font che manda lui direttamente.'
   },
   {
@@ -2728,12 +2734,12 @@ async function disegnaGraficaIG(photoBlob, titolo, colore) {
     ctx.restore();
   }
 
-  // Titolo: font giocoso e bold (Fredoka), riempimento colorato a rotazione
+  // Titolo: font bold ed energico (Titan One, scelto da Luca), riempimento colorato a rotazione
   // settimanale, contorno scuro spesso per restare leggibile su qualsiasi foto.
   const pad = 64;
   const maxW = IG_GRAPHIC_W - pad * 2;
   ctx.textBaseline = 'alphabetic';
-  ctx.font = `700 96px Fredoka, sans-serif`;
+  ctx.font = `96px "Titan One", sans-serif`;
   const words = titolo.toUpperCase().split(' ');
   const lines = [];
   let line = '';
