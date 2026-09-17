@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.11.1',
+    version: '2.12.0',
     date: '2026-09-17',
     current: true,
+    description: 'Grafica IG: rimosso il badge bianco dietro al logo (Luca non lo vuole su sfondo bianco), logo spostato in alto a destra e disegnato direttamente sulla foto con solo un\'ombra. Rimossa la scritta "Il Ciliegio" in basso. Font ancora da rivedere (Fredoka scartato) — in attesa della scelta di Luca da una lista o di un font che manda lui direttamente.'
+  },
+  {
+    version: '2.11.1',
+    date: '2026-09-17',
+    current: false,
     description: 'Fix: la scritta in overlay sulla grafica IG era un titolo diverso per ogni foto derivato (male) dal nome file — già deciso con Luca che dev\'essere sempre la stessa, fissa: "Ovvia mimmi!", coerente col claim usato nei testi FB/IG.'
   },
   {
@@ -2682,8 +2688,8 @@ async function downloadDropboxImageBlob(path) {
 const IG_GRAPHIC_TITOLO = 'Ovvia mimmi!';
 
 // Disegna la grafica IG (foto cover-fit + scrim + logo + titolo bold colorato
-// con contorno scuro per leggibilità + sottotitolo) su un canvas offscreen.
-async function disegnaGraficaIG(photoBlob, titolo, sottotitolo, colore) {
+// con contorno scuro per leggibilità) su un canvas offscreen.
+async function disegnaGraficaIG(photoBlob, titolo, colore) {
   const imgUrl = URL.createObjectURL(photoBlob);
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
@@ -2707,24 +2713,19 @@ async function disegnaGraficaIG(photoBlob, titolo, sottotitolo, colore) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, IG_GRAPHIC_H * 0.45, IG_GRAPHIC_W, IG_GRAPHIC_H * 0.55);
 
-  // Logo in alto a sinistra, ben visibile su un badge chiaro tondo (funziona
-  // sopra qualunque foto, anche quelle molto chiare dove il logo trasparente
-  // da solo sparirebbe).
+  // Logo in alto a destra, direttamente sulla foto (niente badge bianco dietro —
+  // tolto su richiesta di Luca), solo un'ombra per staccarlo dallo sfondo.
   const logo = await _loadIgLogo();
   if (logo) {
-    const badgeR = 90, badgeCx = 64 + badgeR, badgeCy = 64 + badgeR;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.94)';
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = 18;
-    ctx.fill();
-    ctx.restore();
-    const logoSize = badgeR * 1.5;
-    const logoScale = Math.min(logoSize / logo.width, logoSize / logo.height);
+    const logoW = 200;
+    const logoScale = logoW / logo.width;
     const lw = logo.width * logoScale, lh = logo.height * logoScale;
-    ctx.drawImage(logo, badgeCx - lw / 2, badgeCy - lh / 2, lw, lh);
+    const lx = IG_GRAPHIC_W - 64 - lw, ly = 64;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 14;
+    ctx.drawImage(logo, lx, ly, lw, lh);
+    ctx.restore();
   }
 
   // Titolo: font giocoso e bold (Fredoka), riempimento colorato a rotazione
@@ -2744,7 +2745,7 @@ async function disegnaGraficaIG(photoBlob, titolo, sottotitolo, colore) {
   if (line) lines.push(line);
 
   const lineH = 100;
-  let y = IG_GRAPHIC_H - pad - (sottotitolo ? 58 : 0) - (lines.length - 1) * lineH;
+  let y = IG_GRAPHIC_H - pad - (lines.length - 1) * lineH;
   ctx.lineJoin = 'round';
   lines.forEach(l => {
     ctx.lineWidth = 12;
@@ -2754,15 +2755,6 @@ async function disegnaGraficaIG(photoBlob, titolo, sottotitolo, colore) {
     ctx.fillText(l, pad, y);
     y += lineH;
   });
-
-  if (sottotitolo) {
-    ctx.font = `600 36px Fredoka, sans-serif`;
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeText(sottotitolo.toUpperCase(), pad, IG_GRAPHIC_H - pad + 10);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(sottotitolo.toUpperCase(), pad, IG_GRAPHIC_H - pad + 10);
-  }
 
   return canvas;
 }
@@ -2781,7 +2773,7 @@ async function generaGraficaIG(id) {
     const rot = FOTO_ROTAZIONE.find(r => `${DROPBOX_PHOTO_FOLDER}/${r.file}`.toLowerCase() === p.photoFile);
     const idx = rot ? rot.numero : [...p.id].reduce((a,c) => a + c.charCodeAt(0), 0);
     const colore = _coloreGraficaPerIndice(idx);
-    const canvas = await disegnaGraficaIG(blob, titolo, 'Il Ciliegio', colore);
+    const canvas = await disegnaGraficaIG(blob, titolo, colore);
     const container = document.getElementById('ig-graphic-preview');
     if (!container) return;
     container.innerHTML = '';
