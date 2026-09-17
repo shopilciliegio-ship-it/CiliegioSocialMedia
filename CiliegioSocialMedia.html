@@ -273,6 +273,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .post-thumb-sm { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; background: var(--surface2); display: block; }
 .post-thumb-empty { display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 16px; }
 .post-photo-preview { width: 100%; max-height: 340px; object-fit: cover; border-radius: var(--radius-lg); background: var(--surface2); display: block; margin-bottom: 10px; }
+.ig-graphic-canvas { width: 100%; max-width: 320px; border-radius: var(--radius-lg); display: block; margin: 10px auto; background: var(--surface2); box-shadow: var(--shadow); }
 .post-info { }
 .post-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
 .post-desc { font-size: 12px; color: var(--text2); }
@@ -398,6 +399,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 13px; }
 </style>
+<!-- Font per la grafica IG (overlay bold su foto, vedi generaGraficaIG) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -493,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.9.2',
+    version: '2.10.0',
     date: '2026-09-17',
     current: true,
+    description: 'Prima versione della grafica IG: bottone "🖼️ Genera grafica IG" nel dettaglio di ogni reminder con foto, genera al volo (Canvas 2D, niente servizi esterni) un\'immagine 1080×1350 con la foto e un titolo bold in overlay stile "Icche si fà?" (font Anton + sottotitolo "IL CILIEGIO" in Oswald, scrim scuro sul fondo per leggibilità). Solo anteprima/download per ora (non ancora caricata automaticamente da nessuna parte, non ancora usata nel publish). Il titolo è provvisorio (derivato dal nome file) finché non scriviamo insieme i titoli definitivi per le 55 foto.'
+  },
+  {
+    version: '2.9.2',
+    date: '2026-09-17',
+    current: false,
     description: 'Le foto non caricavano in anteprima (icona rotta senza spiegazione) e non si capiva perché. Ora se Dropbox non trova/non riesce a caricare una foto (es. sync non ancora completato dal PC al cloud) compare un messaggio con il motivo reale invece di fallire in silenzio.'
   },
   {
@@ -2142,6 +2153,15 @@ function openPostDetail(id) {
         </div>`}
       ${p.photoHint ? `<div style="margin-top:8px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.5">💡 Suggerimento AI: ${p.photoHint}</div>` : ''}
     </div>
+    ${p.photoFile ? `
+    <div class="form-group" style="margin-bottom:16px">
+      <label>🖼️ Grafica IG (anteprima, solo per Instagram)</label>
+      <div style="display:flex; gap:8px; margin-bottom:6px">
+        <button class="btn sm" onclick="generaGraficaIG('${id}')">🖼️ Genera grafica IG</button>
+        <button class="btn sm" onclick="scaricaGraficaIG()">⬇️ Scarica</button>
+      </div>
+      <div id="ig-graphic-preview"></div>
+    </div>` : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Data</label>
       <input id="pd-date" value="${p.date}">
@@ -2584,6 +2604,122 @@ async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
     }
   }
   return errors;
+}
+
+/* ═══════════════════════════════════════════════
+   GRAFICA IG — foto + testo bold overlay (stile "Icche si fà?"), generata
+   interamente lato client con Canvas 2D. Solo Instagram: Facebook resta
+   foto pulita + caption lunga, il grid coerente conta solo sul feed IG.
+═══════════════════════════════════════════════ */
+const IG_GRAPHIC_W = 1080, IG_GRAPHIC_H = 1350; // formato feed IG 4:5
+
+// Scarica il file immagine vero (non la thumbnail) da Dropbox come Blob.
+async function downloadDropboxImageBlob(path) {
+  const token = await getDropboxAccessToken();
+  if (!token) throw new Error('Dropbox non connesso');
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text; try { msg = JSON.parse(text).error_summary || text; } catch(e) {}
+    throw new Error(`HTTP ${res.status}: ${msg}`);
+  }
+  return res.blob();
+}
+
+// Titolo grafico provvisorio derivato dal nome file, finché non scriviamo insieme
+// a Luca i titoli definitivi (campo p.titoloGrafica in FOTO_ROTAZIONE) — serve solo
+// a validare lo stile (font/layout) sulle prime prove.
+function _titoloGraficaProvvisorio(file) {
+  const base = file.replace(/^\d+\s*/, '').replace(/\.\w+$/, '').replace(/-/g, ' ');
+  return base.split(' ').slice(0, 3).join(' ').toUpperCase();
+}
+
+// Disegna la grafica IG (foto cover-fit + scrim scuro sul fondo + titolo bold e
+// sottotitolo) su un canvas offscreen e lo ritorna.
+async function disegnaGraficaIG(photoBlob, titolo, sottotitolo) {
+  const imgUrl = URL.createObjectURL(photoBlob);
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('immagine non valida'));
+    im.src = imgUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = IG_GRAPHIC_W; canvas.height = IG_GRAPHIC_H;
+  const ctx = canvas.getContext('2d');
+
+  const scale = Math.max(IG_GRAPHIC_W / img.width, IG_GRAPHIC_H / img.height);
+  const dw = img.width * scale, dh = img.height * scale;
+  ctx.drawImage(img, (IG_GRAPHIC_W - dw) / 2, (IG_GRAPHIC_H - dh) / 2, dw, dh);
+  URL.revokeObjectURL(imgUrl);
+
+  // Scrim scuro graduale sul fondo, per leggibilità del testo su qualunque foto
+  const grad = ctx.createLinearGradient(0, IG_GRAPHIC_H * 0.45, 0, IG_GRAPHIC_H);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, IG_GRAPHIC_H * 0.45, IG_GRAPHIC_W, IG_GRAPHIC_H * 0.55);
+
+  const pad = 64;
+  const maxW = IG_GRAPHIC_W - pad * 2;
+  ctx.fillStyle = '#fff';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `86px Anton, sans-serif`;
+  const words = titolo.toUpperCase().split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(w => {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+    else line = test;
+  });
+  if (line) lines.push(line);
+
+  const lineH = 90;
+  let y = IG_GRAPHIC_H - pad - (sottotitolo ? 56 : 0) - (lines.length - 1) * lineH;
+  lines.forEach(l => { ctx.fillText(l, pad, y); y += lineH; });
+
+  if (sottotitolo) {
+    ctx.font = `600 34px Oswald, sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(sottotitolo.toUpperCase(), pad, IG_GRAPHIC_H - pad + 10);
+  }
+
+  return canvas;
+}
+
+// Genera e mostra in anteprima la grafica IG per un post (bottone nel dettaglio post).
+async function generaGraficaIG(id) {
+  const found = findPostById(id);
+  if (!found || !found.post.photoFile) return;
+  const p = found.post;
+  showToast('⏳ Genero la grafica...');
+  try {
+    const blob   = await downloadDropboxImageBlob(p.photoFile);
+    const titolo = p.titoloGrafica || _titoloGraficaProvvisorio(p.photoName || '');
+    const canvas = await disegnaGraficaIG(blob, titolo, 'Il Ciliegio');
+    const container = document.getElementById('ig-graphic-preview');
+    if (!container) return;
+    container.innerHTML = '';
+    canvas.className = 'ig-graphic-canvas';
+    container.appendChild(canvas);
+    window._lastIgGraphicCanvas = canvas;
+    showToast('✅ Grafica generata (anteprima, non ancora salvata)');
+  } catch(err) {
+    showToast('❌ Errore grafica: ' + err.message);
+    console.error(err);
+  }
+}
+
+function scaricaGraficaIG() {
+  if (!window._lastIgGraphicCanvas) { showToast('ℹ️ Genera prima la grafica'); return; }
+  const a = document.createElement('a');
+  a.href = window._lastIgGraphicCanvas.toDataURL('image/jpeg', 0.92);
+  a.download = 'grafica-ig.jpg';
+  a.click();
 }
 
 // Escape di una stringa per l'uso dentro un attributo onclick="..." con argomenti tra apici singoli.
