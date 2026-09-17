@@ -263,15 +263,16 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .tag-tematico  { background: var(--pink-light);   color: var(--pink); }
 
 .post-row {
-  display: grid; grid-template-columns: 52px 48px 1fr auto;
+  display: grid; grid-template-columns: 52px 84px 1fr auto;
   align-items: center; gap: 12px;
   padding: 10px 12px; border-radius: var(--radius);
   cursor: pointer; transition: background 0.1s;
 }
 .post-row:hover { background: var(--surface2); }
 .post-date { font-size: 12px; color: var(--text3); font-weight: 500; }
-.post-thumb-sm { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; background: var(--surface2); display: block; }
+.post-thumb-sm { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; background: var(--surface2); display: block; }
 .post-thumb-empty { display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 16px; }
+.post-photo-preview { width: 100%; max-height: 340px; object-fit: cover; border-radius: var(--radius-lg); background: var(--surface2); display: block; margin-bottom: 10px; }
 .post-info { }
 .post-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
 .post-desc { font-size: 12px; color: var(--text2); }
@@ -492,9 +493,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.9.0',
+    version: '2.9.1',
     date: '2026-09-17',
     current: true,
+    description: 'Anteprime foto ingrandite su richiesta di Luca (troppo piccole per giudicare foto+testo insieme): thumbnail nella riga del calendario da 48 a 84px, e nel dettaglio del post ora è una vera immagine grande in cima al modale (fino a 340px, prima erano 64px accanto al nome file), caricata da Dropbox a risoluzione maggiore (w960h640 invece di w256h256).'
+  },
+  {
+    version: '2.9.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Lancio piano editoriale spostato a lunedì 21/9/2026 (primo reminder = foto/post 01 della rotazione). Disattivato il vecchio ciclo del sabato (piatto/tematico/prodotto/what\'s next generati con AI e foto per categoria): va ripensato come post del venerdì con lo stesso approccio del reminder — immagini e testi decisi e approvati in anticipo, ordine piatto del mese → prodotto del mese → stagionalità → post libero. Codice del vecchio ciclo lasciato intatto ma inattivo, in attesa della nuova rotazione fissa.'
   },
   {
@@ -2113,6 +2120,20 @@ function openPostDetail(id) {
 
   openModal(p.title, `
     ${recurringBadge}
+    <div class="form-group" style="margin-bottom:16px">
+      <label>📸 Foto abbinata</label>
+      ${p.photoFile ? `
+        <img class="post-photo-preview" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">
+        <div style="display:flex; align-items:center; gap:10px">
+          <span style="font-size:13px; color:var(--text2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${p.photoName || p.photoFile}</span>
+          <button class="btn sm" onclick="openPhotoPicker('${id}')">Cambia</button>
+          <button class="btn sm danger" onclick="removePhoto('${id}')">✕</button>
+        </div>` : `
+        <div style="display:flex; align-items:center; gap:10px">
+          <button class="btn sm" onclick="openPhotoPicker('${id}')">Scegli dall'archivio Dropbox</button>
+        </div>`}
+      ${p.photoHint ? `<div style="margin-top:8px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.5">💡 Suggerimento AI: ${p.photoHint}</div>` : ''}
+    </div>
     <div class="form-group" style="margin-bottom:12px">
       <label>Data</label>
       <input id="pd-date" value="${p.date}">
@@ -2133,20 +2154,6 @@ function openPostDetail(id) {
       <label>Testo Instagram</label>
       <textarea id="pd-ig" style="min-height:100px">${p.igText || ''}</textarea>
     </div>
-    <div class="form-group" style="margin-bottom:16px">
-      <label>📸 Foto</label>
-      ${p.photoFile ? `
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
-          <img class="post-thumb-sm" style="width:64px; height:64px" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">
-          <span style="font-size:13px; color:var(--text2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${p.photoName || p.photoFile}</span>
-          <button class="btn sm" onclick="openPhotoPicker('${id}')">Cambia</button>
-          <button class="btn sm danger" onclick="removePhoto('${id}')">✕</button>
-        </div>` : `
-        <div style="display:flex; align-items:center; gap:10px">
-          <button class="btn sm" onclick="openPhotoPicker('${id}')">Scegli dall'archivio Dropbox</button>
-        </div>`}
-      ${p.photoHint ? `<div style="margin-top:8px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.5">💡 Suggerimento AI: ${p.photoHint}</div>` : ''}
-    </div>
     ${p.recurringType === 'reminder' ? `
     <div style="margin-bottom:16px">
       <button class="btn primary" style="width:100%" onclick="approvaSettimana('${id}')">✅ Approva questa settimana</button>
@@ -2158,7 +2165,7 @@ function openPostDetail(id) {
       <button class="btn danger" onclick="deletePost('${id}')">${deleteLabel}</button>
     </div>
   `);
-  if (p.photoFile && STATE.dropboxRefreshToken) loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body');
+  if (p.photoFile && STATE.dropboxRefreshToken) loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body', 'w960h640');
 }
 
 function approvaSettimana(id) {
@@ -2529,7 +2536,9 @@ async function listDropboxPhotos() {
 }
 
 // Carica thumbnail in batch (max 25 per chiamata) e le inserisce negli <img data-photo-path>.
-async function loadPhotoThumbs(photos, gridId) {
+// size: risoluzione richiesta a Dropbox — 'w256h256' per le miniature in lista, 'w960h640'
+// per l'anteprima grande nel dettaglio del post (vedi openPostDetail).
+async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
   const token = await getDropboxAccessToken();
   if (!token || !photos.length) return;
   const BATCH = 25;
@@ -2539,7 +2548,7 @@ async function loadPhotoThumbs(photos, gridId) {
       const res = await fetch(`${DROPBOX_CONTENT}/files/get_thumbnail_batch`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: slice.map(p => ({ path: p.path_lower, format: 'jpeg', size: 'w256h256', mode: 'bestfit' })) })
+        body: JSON.stringify({ entries: slice.map(p => ({ path: p.path_lower, format: 'jpeg', size, mode: 'bestfit' })) })
       });
       const data = await res.json();
       data.entries?.forEach((entry, j) => {
