@@ -492,9 +492,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.8.0',
+    version: '2.9.0',
     date: '2026-09-17',
     current: true,
+    description: 'Lancio piano editoriale spostato a lunedì 21/9/2026 (primo reminder = foto/post 01 della rotazione). Disattivato il vecchio ciclo del sabato (piatto/tematico/prodotto/what\'s next generati con AI e foto per categoria): va ripensato come post del venerdì con lo stesso approccio del reminder — immagini e testi decisi e approvati in anticipo, ordine piatto del mese → prodotto del mese → stagionalità → post libero. Codice del vecchio ciclo lasciato intatto ma inattivo, in attesa della nuova rotazione fissa.'
+  },
+  {
+    version: '2.8.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Reminder del lunedì riscritto: sostituita la generazione AI a rotazione di categoria con una rotazione fissa di 55 foto curate (persona/luogo/prodotto), ognuna con testo FB+IG pre-scritto e approvato da Luca (niente più AI al momento del post). Nuovo bottone "✅ Approva questa settimana" nel dettaglio del reminder. Anteprima foto reale (non solo nome file) sia nella riga del calendario sia nel dettaglio post. "Genera testi del mese" ora salta i reminder (già pronti dalla rotazione) e genera solo per gli altri post ricorrenti. Archivio foto Dropbox ripulito e ripuntato su /IlCiliegio/SocialMedia/FotoPost (il vecchio archivio di 176 foto per categoria è archiviato in _archivio, non cancellato).'
   },
   {
@@ -688,7 +694,7 @@ const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
        4° sabato del ciclo: what's next (anticipa il mese successivo)
        → poi riparti — ciclo non reset a ogni mese
 ═══════════════════════════════════════════════ */
-const RECURRING_START     = '2026-06-22'; // primo lunedì (reminder)
+const RECURRING_START     = '2026-09-21'; // primo lunedì (reminder) — lancio piano editoriale, foto/post 01
 const RECURRING_SAT_START = '2026-07-04'; // primo sabato del ciclo (piatto)
 const RECURRING_END       = '2028-06-30';
 
@@ -1095,20 +1101,20 @@ function makeRecurringPost(type, date) {
 function generateRecurringPosts() {
   const posts   = [];
   const start   = new Date(RECURRING_START     + 'T00:00:00');
-  const satStart= new Date(RECURRING_SAT_START + 'T00:00:00');
   const end     = new Date(RECURRING_END       + 'T00:00:00');
 
-  // Ciclo continuo sabati: piatto → stagionalità → prodotto → what's next → riparti
-  const SAT_ROLES = ['piatto', 'tematico', 'prodotto', 'whatsnext'];
-  let satIdx = 0;
+  // Post del venerdì (piatto del mese → prodotto del mese → stagionalità → post libero)
+  // DISATTIVATO dal 17/9/2026 su richiesta di Luca: il vecchio ciclo del sabato generava
+  // AI/foto-per-categoria automaticamente, ma va ripensato con lo stesso approccio del
+  // reminder del lunedì — immagini e testi decisi e approvati in anticipo, non generati
+  // al volo. Da ricostruire come rotazione fissa (tipo FOTO_ROTAZIONE) quando pronta.
+  // Vecchia logica di riferimento (RECURRING_SAT_START, PIATTO_PLAN, PRODOTTO_PLAN,
+  // STAGIONALITA_PLAN, THEMATIC_PLAN) lasciata intatta più sotto, non cancellata.
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay(); // 0=dom … 6=sab
     if (dow === 1) {
       posts.push(makeRecurringPost('reminder', new Date(d)));
-    } else if (dow === 6 && d >= satStart) {
-      posts.push(makeRecurringPost(SAT_ROLES[satIdx % 4], new Date(d)));
-      satIdx++;
     }
   }
   return posts;
