@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.13.0',
+    version: '2.13.1',
     date: '2026-09-17',
     current: true,
+    description: 'Grafica IG: lo stemma dentro il badge era troppo piccolo — ora riempie quasi tutto il cerchio (cover-fit con clip circolare, prima era "contain" con parecchio margine vuoto). La scritta "Ovvia mimmi!" ora si ridimensiona per occupare sempre tutta la larghezza della foto (bordo a bordo) invece di una dimensione fissa in px, ed è posizionata un po\' più in alto. Dimensione/posizione di logo e scritta restano identiche a ogni foto — cambia solo il colore a rotazione.'
+  },
+  {
+    version: '2.13.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Due fix reali sulla grafica IG: (1) il font Titan One non veniva mai usato dal canvas perché il webfont non era pronto quando si scriveva il testo (fillText/strokeText non aspettano il caricamento) — ora si aspetta esplicitamente document.fonts.load()/ready prima di disegnare; (2) logo rimesso dentro un badge tondo in alto a destra, ma colorato con lo stesso colore della scritta di quella settimana invece che bianco (il file del logo ha la scritta "IL CILIEGIO AZIENDA AGRICOLA" in bianco, invisibile su sfondo bianco — è il motivo per cui Luca lo escludeva). Nel badge si vede solo lo stemma dorato (ritagliata la scritta, illeggibile a quella scala).'
   },
   {
@@ -2750,40 +2756,43 @@ async function disegnaGraficaIG(photoBlob, titolo, colore) {
     ctx.shadowBlur = 16;
     ctx.fill();
     ctx.restore();
+    // Lo stemma riempie quasi tutto il badge (piccolo margine perché non tocchi
+    // il bordo del cerchio) — prima era troppo piccolo e "perso" nell'ovale.
     const sw = logo.width, sh = logo.height * IG_LOGO_ICON_CUT;
-    const logoSize = badgeR * 1.5;
-    const logoScale = Math.min(logoSize / sw, logoSize / sh);
+    const logoSize = badgeR * 1.88;
+    const logoScale = Math.max(logoSize / sw, logoSize / sh);
     const lw = sw * logoScale, lh = sh * logoScale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+    ctx.clip();
     ctx.drawImage(logo, 0, 0, sw, sh, badgeCx - lw / 2, badgeCy - lh / 2, lw, lh);
+    ctx.restore();
   }
 
-  // Titolo: font bold ed energico (Titan One, scelto da Luca), riempimento colorato a rotazione
-  // settimanale, contorno scuro spesso per restare leggibile su qualsiasi foto.
+  // Titolo: font bold ed energico (Titan One, scelto da Luca), riempimento colorato
+  // a rotazione settimanale, contorno scuro per restare leggibile su qualsiasi foto.
+  // Dimensione e posizione SEMPRE UGUALI (solo il colore cambia a rotazione) — il
+  // testo viene ridimensionato per occupare tutta la larghezza della foto, non ha
+  // una dimensione fissa in px: una frase più lunga verrebbe scritta più piccola,
+  // una più corta più grande, ma sempre da bordo a bordo.
   const pad = 64;
   const maxW = IG_GRAPHIC_W - pad * 2;
+  const testo = titolo.toUpperCase();
   ctx.textBaseline = 'alphabetic';
-  ctx.font = `96px "Titan One", sans-serif`;
-  const words = titolo.toUpperCase().split(' ');
-  const lines = [];
-  let line = '';
-  words.forEach(w => {
-    const test = line ? line + ' ' + w : w;
-    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
-    else line = test;
-  });
-  if (line) lines.push(line);
+  const refSize = 100;
+  ctx.font = `${refSize}px "Titan One", sans-serif`;
+  const measured = ctx.measureText(testo).width;
+  const fontSize = Math.round(refSize * (maxW / measured));
+  ctx.font = `${fontSize}px "Titan One", sans-serif`;
 
-  const lineH = 100;
-  let y = IG_GRAPHIC_H - pad - (lines.length - 1) * lineH;
+  const y = IG_GRAPHIC_H - pad - fontSize * 0.34; // "un attimo più alta" del bordo
   ctx.lineJoin = 'round';
-  lines.forEach(l => {
-    ctx.lineWidth = 12;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeText(l, pad, y);
-    ctx.fillStyle = colore;
-    ctx.fillText(l, pad, y);
-    y += lineH;
-  });
+  ctx.lineWidth = fontSize * 0.13;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.strokeText(testo, pad, y);
+  ctx.fillStyle = colore;
+  ctx.fillText(testo, pad, y);
 
   return canvas;
 }
