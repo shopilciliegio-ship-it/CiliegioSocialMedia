@@ -493,9 +493,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.9.1',
+    version: '2.9.2',
     date: '2026-09-17',
     current: true,
+    description: 'Le foto non caricavano in anteprima (icona rotta senza spiegazione) e non si capiva perché. Ora se Dropbox non trova/non riesce a caricare una foto (es. sync non ancora completato dal PC al cloud) compare un messaggio con il motivo reale invece di fallire in silenzio.'
+  },
+  {
+    version: '2.9.1',
+    date: '2026-09-17',
+    current: false,
     description: 'Anteprime foto ingrandite su richiesta di Luca (troppo piccole per giudicare foto+testo insieme): thumbnail nella riga del calendario da 48 a 84px, e nel dettaglio del post ora è una vera immagine grande in cima al modale (fino a 340px, prima erano 64px accanto al nome file), caricata da Dropbox a risoluzione maggiore (w960h640 invece di w256h256).'
   },
   {
@@ -1495,7 +1501,9 @@ function renderPostRow(p) {
 // del dettaglio giorno — mostra la foto abbinata al post accanto al testo.
 async function loadThumbsForPosts(posts) {
   const withPhoto = posts.filter(p => p.photoFile).map(p => ({ path_lower: p.photoFile }));
-  if (withPhoto.length) await loadPhotoThumbs(withPhoto, 'modal-body');
+  if (!withPhoto.length) return;
+  const errors = await loadPhotoThumbs(withPhoto, 'modal-body');
+  if (errors.length) showToast(`⚠️ Foto non caricata: ${errors[0].error}`);
 }
 
 /* ═══════════════════════════════════════════════
@@ -2165,7 +2173,10 @@ function openPostDetail(id) {
       <button class="btn danger" onclick="deletePost('${id}')">${deleteLabel}</button>
     </div>
   `);
-  if (p.photoFile && STATE.dropboxRefreshToken) loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body', 'w960h640');
+  if (p.photoFile && STATE.dropboxRefreshToken) {
+    loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body', 'w960h640')
+      .then(errors => { if (errors.length) showToast(`⚠️ Foto non trovata su Dropbox: ${errors[0].error}`); });
+  }
 }
 
 function approvaSettimana(id) {
@@ -2538,9 +2549,14 @@ async function listDropboxPhotos() {
 // Carica thumbnail in batch (max 25 per chiamata) e le inserisce negli <img data-photo-path>.
 // size: risoluzione richiesta a Dropbox — 'w256h256' per le miniature in lista, 'w960h640'
 // per l'anteprima grande nel dettaglio del post (vedi openPostDetail).
+// Ritorna un array di errori (path + motivo) invece di fallire in silenzio: se Dropbox non
+// trova un file (es. non ancora sincronizzato dal PC al cloud) prima si vedeva solo
+// un'icona rotta senza spiegazione — ora chi chiama può mostrare il motivo reale a Luca.
 async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
+  const errors = [];
   const token = await getDropboxAccessToken();
-  if (!token || !photos.length) return;
+  if (!token) { photos.forEach(p => errors.push({ path: p.path_lower, error: 'Dropbox non connesso' })); return errors; }
+  if (!photos.length) return errors;
   const BATCH = 25;
   for (let i = 0; i < photos.length; i += BATCH) {
     const slice = photos.slice(i, i + BATCH);
@@ -2552,13 +2568,22 @@ async function loadPhotoThumbs(photos, gridId, size = 'w256h256') {
       });
       const data = await res.json();
       data.entries?.forEach((entry, j) => {
+        const path = slice[j].path_lower;
         if (entry['.tag'] === 'success' && entry.thumbnail) {
-          const img = document.querySelector(`#${gridId} [data-photo-path="${CSS.escape(slice[j].path_lower)}"]`);
+          const img = document.querySelector(`#${gridId} [data-photo-path="${CSS.escape(path)}"]`);
           if (img) img.src = `data:image/jpeg;base64,${entry.thumbnail}`;
+        } else {
+          const reason = entry.failure?.[entry.failure?.['.tag']]?.['.tag'] || entry.failure?.['.tag'] || 'errore sconosciuto';
+          console.warn('thumbnail non trovata:', path, entry.failure);
+          errors.push({ path, error: reason });
         }
       });
-    } catch(e) { console.error('thumbnail batch:', e); }
+    } catch(e) {
+      console.error('thumbnail batch:', e);
+      slice.forEach(p => errors.push({ path: p.path_lower, error: e.message }));
+    }
   }
+  return errors;
 }
 
 // Escape di una stringa per l'uso dentro un attributo onclick="..." con argomenti tra apici singoli.
