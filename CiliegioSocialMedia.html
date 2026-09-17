@@ -498,9 +498,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.11.0',
+    version: '2.11.1',
     date: '2026-09-17',
     current: true,
+    description: 'Fix: la scritta in overlay sulla grafica IG era un titolo diverso per ogni foto derivato (male) dal nome file — già deciso con Luca che dev\'essere sempre la stessa, fissa: "Ovvia mimmi!", coerente col claim usato nei testi FB/IG.'
+  },
+  {
+    version: '2.11.0',
+    date: '2026-09-17',
+    current: false,
     description: 'Grafica IG rivista su feedback di Luca: font cambiato da Anton (troppo "a bastoni", bianco e anonimo) a Fredoka, più giocoso e bold senza scadere nel Comic Sans. Il titolo ora ha un colore diverso a rotazione settimanale (10 colori del brand, stesso indice della foto — non casuale, riproducibile), con contorno scuro per restare leggibile su qualsiasi foto. Aggiunto il logo del Ciliegio (già esistente su GitHub, riusato da Ciliegio-Menu) in alto a sinistra su un badge chiaro, ben visibile su qualunque sfondo.'
   },
   {
@@ -2671,13 +2677,9 @@ async function downloadDropboxImageBlob(path) {
   return res.blob();
 }
 
-// Titolo grafico provvisorio derivato dal nome file, finché non scriviamo insieme
-// a Luca i titoli definitivi (campo p.titoloGrafica in FOTO_ROTAZIONE) — serve solo
-// a validare lo stile (font/layout/colore) sulle prime prove.
-function _titoloGraficaProvvisorio(file) {
-  const base = file.replace(/^\d+\s*/, '').replace(/\.\w+$/, '').replace(/-/g, ' ');
-  return base.split(' ').slice(0, 3).join(' ').toUpperCase();
-}
+// Scritta fissa in overlay su tutte le grafiche IG, uguale al claim usato nei testi
+// FB/IG del reminder — non un titolo diverso per ogni foto (già deciso con Luca).
+const IG_GRAPHIC_TITOLO = 'Ovvia mimmi!';
 
 // Disegna la grafica IG (foto cover-fit + scrim + logo + titolo bold colorato
 // con contorno scuro per leggibilità + sottotitolo) su un canvas offscreen.
@@ -2773,7 +2775,7 @@ async function generaGraficaIG(id) {
   showToast('⏳ Genero la grafica...');
   try {
     const blob   = await downloadDropboxImageBlob(p.photoFile);
-    const titolo = p.titoloGrafica || _titoloGraficaProvvisorio(p.photoName || '');
+    const titolo = IG_GRAPHIC_TITOLO;
     // Indice per la rotazione colore: numero della foto se è un reminder (rotazione
     // fissa nota), altrimenti un indice stabile derivato dall'id del post.
     const rot = FOTO_ROTAZIONE.find(r => `${DROPBOX_PHOTO_FOLDER}/${r.file}`.toLowerCase() === p.photoFile);
