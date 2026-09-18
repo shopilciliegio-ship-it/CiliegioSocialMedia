@@ -398,6 +398,67 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 /* ── MISC ── */
 hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 13px; }
+
+/* ── ANTEPRIMA POST FB/IG (dettaglio post) ── */
+.fbig-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ── HAMBURGER / SIDEBAR MOBILE ── */
+.hamburger-btn {
+  display: none; /* solo sotto il breakpoint mobile, vedi media query */
+  background: none; border: none; font-size: 20px; color: var(--text);
+  cursor: pointer; padding: 4px 8px; margin-right: 4px; line-height: 1;
+}
+.sidebar-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90;
+}
+.sidebar-backdrop.show { display: block; }
+
+/* ── RESPONSIVE (telefono/tablet stretto) ──
+   Sotto i 720px: la sidebar diventa un pannello a scomparsa (hamburger nel topbar),
+   il calendario passa da griglia 7 colonne a elenco verticale dei giorni (con
+   l'etichetta del giorno della settimana visibile su ogni riga), e le griglie a due
+   colonne (form, output, anteprima FB/IG) si impilano una sopra l'altra. */
+@media (max-width: 720px) {
+  .hamburger-btn { display: inline-block; }
+
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 95;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .topbar {
+    height: auto; flex-direction: column; align-items: stretch;
+    padding: 10px 12px; gap: 8px;
+  }
+  .topbar-left { min-width: 0; }
+  .topbar-title { white-space: normal; overflow-wrap: break-word; }
+  .topbar-right { flex-wrap: wrap; }
+  .content { padding: 14px; }
+
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+
+  .cal-grid { grid-template-columns: 1fr; gap: 8px; }
+  .cal-weekday { display: none; }
+  .cal-day.empty { display: none; }
+  .cal-day:not(.has-posts) { display: none; } /* giorni senza post: solo rumore in un elenco lungo */
+  .cal-day { min-height: 0; }
+  .cal-day-weekday { color: var(--text3); font-weight: 500; margin-right: 4px; }
+
+  .form-grid,
+  .output-grid,
+  .fbig-preview-grid { grid-template-columns: 1fr; }
+
+  .season-table { overflow-x: auto; }
+  .season-table table { min-width: 480px; }
+
+  .post-row { grid-template-columns: 40px 60px 1fr auto; }
+
+  .modal { padding: 16px; width: 100%; }
+  .modal-backdrop { padding: 0; }
+}
 </style>
 <!-- Font per la grafica IG (overlay bold su foto, vedi generaGraficaIG) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -422,8 +483,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
 <div class="app">
 
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
   <!-- ── SIDEBAR ── -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="brand-row">
         <div class="brand-cherry">🍒</div>
@@ -465,6 +528,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
+        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu">☰</button>
         <div class="topbar-title" id="topbar-title">Piano editoriale annuale</div>
       </div>
       <div class="topbar-right" id="topbar-actions">
@@ -484,9 +548,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.18.0',
+    version: '2.19.0',
     date: '2026-09-18',
     current: true,
+    description: 'App responsive per telefono (serve per far lavorare un collaboratore da mobile): sidebar diventa un menu a scomparsa (☰ in alto, si chiude da sola cambiando vista), il calendario passa da griglia 7 colonne a elenco verticale dei giorni con post (nasconde i giorni vuoti, altrimenti sarebbe uno scroll infinito), le griglie a due colonne (form, anteprima FB/IG nel dettaglio post) si impilano una sopra l\'altra. Verificato con screenshot headless a 390px (telefono) e 1280px (desktop, nessuna regressione).'
+  },
+  {
+    version: '2.18.0',
+    date: '2026-09-18',
+    current: false,
     description: 'Nuova voce in sidebar "🗓️ Temi mensili (venerdì)": anteprima di sola lettura dei 3x12 temi di PIATTO_PLAN/PRODOTTO_PLAN/STAGIONALITA_PLAN, mese per mese, in un\'unica pagina — utile mentre si scelgono foto e testi per il piano del venerdì, senza dover cercare le liste nel codice.'
   },
   {
@@ -1352,8 +1422,21 @@ const VIEW_ACTIONS = {
   settings: ''
 };
 
+// Sidebar a scomparsa (schermi stretti): toggleSidebar() apre/chiude, closeSidebar()
+// chiude e basta (usata dal backdrop e da showView, così cambiare vista da telefono
+// chiude il menu invece di lasciarlo aperto sopra il contenuto).
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-backdrop').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+
 function showView(name) {
   STATE.currentView = name;
+  closeSidebar();
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === name);
   });
@@ -1423,9 +1506,10 @@ function renderCalendarGrid(year, month) {
     const hasPosts = posts.length > 0;
     const isToday = year === now.getFullYear() && month === now.getMonth() && day === now.getDate();
 
+    const weekday = WEEKDAY_LABELS[(firstWeekday + day - 1) % 7];
     cells += `
       <div class="cal-day${hasPosts ? ' has-posts' : ''}${isToday ? ' today' : ''}" ${hasPosts ? `onclick="showDayDetail(${year},${month},${day})"` : ''}>
-        <div class="cal-day-num">${day}</div>
+        <div class="cal-day-num"><span class="cal-day-weekday">${weekday}</span> ${day}</div>
         ${chips}${more}
       </div>
     `;
@@ -1859,7 +1943,7 @@ function openPostDetail(id) {
     ${p.photoFile ? `
     <div class="form-group" style="margin-bottom:16px">
       <label>👀 Anteprima finita — così come uscirà davvero</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+      <div class="fbig-preview-grid">
         <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
           <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:2px">📘 Facebook (foto pulita)</div>
           <img class="post-photo-preview" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">
