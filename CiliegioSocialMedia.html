@@ -481,9 +481,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.15.0',
+    version: '2.16.0',
     date: '2026-09-18',
     current: true,
+    description: 'Anteprima finita nel dettaglio post: la sezione "Foto abbinata" ora mostra fianco a fianco due card — "📘 Facebook" (foto pulita + inizio del testo FB) e "📸 Instagram" (grafica con overlay + inizio del testo IG) — così come usciranno davvero, non più pezzi separati da immaginare uniti. La grafica IG si genera ora automaticamente all\'apertura del post (non serve più cliccare "Genera grafica IG"); il click manuale resta disponibile solo per rigenerarla dopo aver cambiato foto o testo.'
+  },
+  {
+    version: '2.15.0',
+    date: '2026-09-18',
+    current: false,
     description: 'Rimossa tutta la generazione AI a runtime, ormai superflua: ogni post (reminder del lunedì, e a breve la rotazione del venerdì) è deciso e approvato in anticipo, mai generato al momento. Eliminate le viste "Pilastri tematici", "Format post" e "Genera contenuti" (e i relativi bottoni "✨ Genera testi con AI" / "✨ Genera testi del mese" / "📅 Schedula su Meta"), la sezione "🔑 API Anthropic" in Impostazioni e l\'indicatore di stato API in sidebar. Il codice di supporto (prompt, calibrazione pilastro/stagione, PIATTO_PLAN/PRODOTTO_PLAN/STAGIONALITA_PLAN ecc.) resta in pancia al file, non raggiungibile da nessun bottone, solo come materiale grezzo per quando si costruirà la rotazione fissa del venerdì.'
   },
   {
@@ -1772,7 +1778,6 @@ function openPostDetail(id) {
     <div class="form-group" style="margin-bottom:16px">
       <label>📸 Foto abbinata</label>
       ${p.photoFile ? `
-        <img class="post-photo-preview" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">
         <div style="display:flex; align-items:center; gap:10px">
           <span style="font-size:13px; color:var(--text2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${p.photoName || p.photoFile}</span>
           <button class="btn sm" onclick="openPhotoPicker('${id}')">Cambia</button>
@@ -1785,12 +1790,22 @@ function openPostDetail(id) {
     </div>
     ${p.photoFile ? `
     <div class="form-group" style="margin-bottom:16px">
-      <label>🖼️ Grafica IG (anteprima, solo per Instagram)</label>
-      <div style="display:flex; gap:8px; margin-bottom:6px">
-        <button class="btn sm" onclick="generaGraficaIG('${id}')">🖼️ Genera grafica IG</button>
-        <button class="btn sm" onclick="scaricaGraficaIG()">⬇️ Scarica</button>
+      <label>👀 Anteprima finita — così come uscirà davvero</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+        <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:2px">📘 Facebook (foto pulita)</div>
+          <img class="post-photo-preview" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">
+          <div style="font-size:12px; color:var(--text2); line-height:1.5; white-space:pre-wrap">${p.fbText ? p.fbText.slice(0,160) + (p.fbText.length>160 ? '…' : '') : '(nessun testo)'}</div>
+        </div>
+        <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:2px; display:flex; justify-content:space-between; align-items:center">
+            📸 Instagram (con grafica)
+            <button class="btn sm" onclick="scaricaGraficaIG()">⬇️ Scarica</button>
+          </div>
+          <div id="ig-graphic-preview"><div style="font-size:12px; color:var(--text2); padding:20px 0; text-align:center">⏳ Genero la grafica...</div></div>
+          <div style="font-size:12px; color:var(--text2); line-height:1.5; white-space:pre-wrap">${p.igText ? p.igText.slice(0,160) + (p.igText.length>160 ? '…' : '') : '(nessun testo)'}</div>
+        </div>
       </div>
-      <div id="ig-graphic-preview"></div>
     </div>` : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Data</label>
@@ -1825,6 +1840,7 @@ function openPostDetail(id) {
   if (p.photoFile && STATE.dropboxRefreshToken) {
     loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body', 'w960h640')
       .then(errors => { if (errors.length) showToast(`⚠️ Foto non trovata su Dropbox: ${errors[0].error}`); });
+    generaGraficaIG(id, true);
   }
 }
 
@@ -2368,11 +2384,13 @@ async function disegnaGraficaIG(photoBlob, titolo, colore) {
 }
 
 // Genera e mostra in anteprima la grafica IG per un post (bottone nel dettaglio post).
-async function generaGraficaIG(id) {
+// silent=true: usato per l'anteprima automatica all'apertura del post (niente toast di
+// routine, solo in caso di errore reale) — il click manuale sul bottone resta "rumoroso".
+async function generaGraficaIG(id, silent = false) {
   const found = findPostById(id);
   if (!found || !found.post.photoFile) return;
   const p = found.post;
-  showToast('⏳ Genero la grafica...');
+  if (!silent) showToast('⏳ Genero la grafica...');
   try {
     const blob   = await downloadDropboxImageBlob(p.photoFile);
     const titolo = IG_GRAPHIC_TITOLO;
@@ -2388,8 +2406,10 @@ async function generaGraficaIG(id) {
     canvas.className = 'ig-graphic-canvas';
     container.appendChild(canvas);
     window._lastIgGraphicCanvas = canvas;
-    showToast('✅ Grafica generata (anteprima, non ancora salvata)');
+    if (!silent) showToast('✅ Grafica generata (anteprima, non ancora salvata)');
   } catch(err) {
+    const container = document.getElementById('ig-graphic-preview');
+    if (container) container.innerHTML = `<div style="font-size:12px; color:var(--coral); padding:10px">❌ Errore grafica: ${err.message}</div>`;
     showToast('❌ Errore grafica: ' + err.message);
     console.error(err);
   }
