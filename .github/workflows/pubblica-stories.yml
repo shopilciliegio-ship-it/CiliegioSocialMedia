@@ -1,0 +1,35 @@
+name: Pubblica stories giornaliere
+
+on:
+  schedule:
+    # 9:30 Europe/Rome, due orari per coprire il cambio ora legale/solare (come per il
+    # post del lunedì — mezz'ora dopo, per non sovrapporsi a quella pubblicazione).
+    - cron: '30 7 * * *'  # 09:30 Europe/Rome quando è in vigore CEST (ora legale, UTC+2)
+    - cron: '30 8 * * *'  # 09:30 Europe/Rome quando è in vigore CET (ora solare, UTC+1)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Test a secco: logga le immagini che pubblicherebbe, senza toccare Instagram'
+        type: boolean
+        default: true
+      force:
+        description: 'Ignora il controllo orario (solo per test manuali)'
+        type: boolean
+        default: true
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Pubblica stories del giorno
+        env:
+          IG_USER_ID:       ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN:  ${{ secrets.IG_ACCESS_TOKEN }}
+          # Cron (produzione): pubblica davvero. workflow_dispatch: rispetta l'input scelto.
+          DRY_RUN:   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+        run: node pubblica-stories.js
