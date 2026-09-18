@@ -442,6 +442,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
       <button class="nav-item active" data-view="calendar" onclick="showView('calendar')">
         <span class="icon">📅</span> Piano editoriale
       </button>
+      <button class="nav-item" data-view="temi" onclick="showView('temi')">
+        <span class="icon">🗓️</span> Temi mensili (venerdì)
+      </button>
       <div class="nav-section">Operativo</div>
       <button class="nav-item" data-view="photos" onclick="showView('photos')">
         <span class="icon">📷</span> Archivio foto
@@ -481,9 +484,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.17.0',
+    version: '2.18.0',
     date: '2026-09-18',
     current: true,
+    description: 'Nuova voce in sidebar "🗓️ Temi mensili (venerdì)": anteprima di sola lettura dei 3x12 temi di PIATTO_PLAN/PRODOTTO_PLAN/STAGIONALITA_PLAN, mese per mese, in un\'unica pagina — utile mentre si scelgono foto e testi per il piano del venerdì, senza dover cercare le liste nel codice.'
+  },
+  {
+    version: '2.17.0',
+    date: '2026-09-18',
+    current: false,
     description: 'Revisione PIATTO_PLAN/PRODOTTO_PLAN dopo verifica online sui calendari reali di vendemmia/raccolta olive/tradizione senese (in preparazione al piano del venerdì): maggio "bruschetta con olio nuovo" → tolto "nuovo" (l\'olio nuovo è di novembre, non maggio); agosto "cinghiale con polenta" → "pappardelle al cinghiale" (abbinamento più tipicamente senese); novembre fix "Chianti Classico" → "Chianti Colli Senesi" (denominazione sbagliata, refuso mai corretto in questa lista); prodotto di ottobre "olio nuovo — prima spremitura" spostato a novembre (la raccolta olive è a novembre, non ottobre) e sostituito a ottobre con "Vin Santo e Cantucci del Ciliegio" (tema mai usato). STAGIONALITA_PLAN confermato corretto così, nessuna modifica.'
   },
   {
@@ -1326,6 +1335,7 @@ function updateDropboxStatus() {
 ═══════════════════════════════════════════════ */
 const VIEW_TITLES = {
   calendar: 'Piano editoriale annuale',
+  temi:     'Temi mensili (venerdì)',
   photos:   'Archivio foto',
   settings: 'Impostazioni'
 };
@@ -1337,6 +1347,7 @@ const VIEW_ACTIONS = {
     <button class="btn sm" onclick="exportPlanTxt()" title="Esporta elenco date e post in un file di testo">📄 Esporta TXT</button>
     <button class="btn sm" onclick="addPostModal()">＋ Nuovo post</button>
   `,
+  temi: '',
   photos:  `<button class="btn sm" onclick="loadAndRenderPhotos()">🔄 Ricarica</button>`,
   settings: ''
 };
@@ -1352,6 +1363,7 @@ function showView(name) {
   const c = document.getElementById('main-content');
   switch(name) {
     case 'calendar': c.innerHTML = renderCalendar(); break;
+    case 'temi':     c.innerHTML = renderTemiMensili(); break;
     case 'photos':   c.innerHTML = renderPhotos();   break;
     case 'settings': c.innerHTML = renderSettings(); break;
   }
@@ -1662,6 +1674,56 @@ async function callClaude(prompt, maxTokens = 1500) {
              || raw.trim();
   if (!clean) throw new Error('Risposta AI vuota — riprova');
   return JSON.parse(clean);
+}
+
+/* ═══════════════════════════════════════════════
+   VIEW: TEMI MENSILI (venerdì)
+   Sola lettura: anteprima mese per mese di PIATTO_PLAN/PRODOTTO_PLAN/
+   STAGIONALITA_PLAN, i temi ricorrenti in preparazione per il piano
+   editoriale del venerdì (stesso approccio a rotazione fissa del
+   reminder del lunedì — vedi CLAUDE API HELPER sopra). Non genera
+   nulla, non salva nulla: serve solo a vedere i 3x12 temi a colpo
+   d'occhio mentre si scelgono foto e testi insieme.
+═══════════════════════════════════════════════ */
+function renderTemiMensili() {
+  const pillarBadge = (key) => {
+    const t = PILLAR_TAGS[key];
+    return t ? `<span class="tag ${t.cls}">${t.icon} ${key}</span>` : (key || '');
+  };
+  const rows = (plan, withPillar) => MONTH_NAMES_IT.map((mese, i) => {
+    const m = i + 1;
+    const v = plan[m];
+    if (!v) return `<tr><td><strong>${mese}</strong></td><td colspan="${withPillar ? 2 : 1}" style="color:var(--text3)">— da definire —</td></tr>`;
+    return `<tr>
+      <td><strong>${mese}</strong></td>
+      <td>
+        <div style="font-weight:600; margin-bottom:2px">${v.title}</div>
+        <div style="font-size:12px; color:var(--text2); line-height:1.5">${v.desc}</div>
+      </td>
+      ${withPillar ? `<td>${pillarBadge(v.pillar)}</td>` : ''}
+    </tr>`;
+  }).join('');
+
+  const table = (title, plan, withPillar) => `
+    <div class="settings-section">
+      <div class="settings-title">${title}</div>
+      <div class="season-table">
+        <table>
+          <thead><tr><th style="width:80px">Mese</th><th>Tema</th>${withPillar ? '<th style="width:110px">Pilastro</th>' : ''}</tr></thead>
+          <tbody>${rows(plan, withPillar)}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  return `
+    <div style="font-size:12px; color:var(--text3); margin-bottom:16px; line-height:1.6">
+      Anteprima dei temi ricorrenti in preparazione per il piano editoriale del venerdì (piatto del mese → prodotto del mese → stagionalità → post libero).
+      Solo lettura: foto e testi FB/IG si decidono a parte, insieme, prima di diventare post veri nel calendario — qui vedi solo i temi.
+    </div>
+    ${table('🍽️ Piatto del mese', PIATTO_PLAN, true)}
+    ${table('📦 Prodotto del mese', PRODOTTO_PLAN, true)}
+    ${table('🌿 Stagionalità del mese', STAGIONALITA_PLAN, false)}
+  `;
 }
 
 /* ═══════════════════════════════════════════════
