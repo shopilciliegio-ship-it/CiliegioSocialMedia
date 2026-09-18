@@ -481,9 +481,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.16.0',
+    version: '2.17.0',
     date: '2026-09-18',
     current: true,
+    description: 'Revisione PIATTO_PLAN/PRODOTTO_PLAN dopo verifica online sui calendari reali di vendemmia/raccolta olive/tradizione senese (in preparazione al piano del venerdì): maggio "bruschetta con olio nuovo" → tolto "nuovo" (l\'olio nuovo è di novembre, non maggio); agosto "cinghiale con polenta" → "pappardelle al cinghiale" (abbinamento più tipicamente senese); novembre fix "Chianti Classico" → "Chianti Colli Senesi" (denominazione sbagliata, refuso mai corretto in questa lista); prodotto di ottobre "olio nuovo — prima spremitura" spostato a novembre (la raccolta olive è a novembre, non ottobre) e sostituito a ottobre con "Vin Santo e Cantucci del Ciliegio" (tema mai usato). STAGIONALITA_PLAN confermato corretto così, nessuna modifica.'
+  },
+  {
+    version: '2.16.0',
+    date: '2026-09-18',
+    current: false,
     description: 'Anteprima finita nel dettaglio post: la sezione "Foto abbinata" ora mostra fianco a fianco due card — "📘 Facebook" (foto pulita + inizio del testo FB) e "📸 Instagram" (grafica con overlay + inizio del testo IG) — così come usciranno davvero, non più pezzi separati da immaginare uniti. La grafica IG si genera ora automaticamente all\'apertura del post (non serve più cliccare "Genera grafica IG"); il click manuale resta disponibile solo per rigenerarla dopo aver cambiato foto o testo.'
   },
   {
@@ -870,7 +876,7 @@ const PIATTO_PLAN = {
   4:  { title: 'Arista di Cinta Senese al forno',
         desc: 'Il lombo della Cinta Senese, la razza suina autoctona delle colline senesi (DOP, Presidio Slow Food), arrostito con rosmarino, aglio e un filo di vino bianco — la carne che più di ogni altra racconta il territorio di Siena',
         pillar: 'ristorante' },
-  5:  { title: 'Bruschetta con olio nuovo e verdure di stagione',
+  5:  { title: 'Bruschetta con olio e verdure di stagione',
         desc: 'La semplicità che vale più di tante ricette elaborate: pane di farro del Ciliegio tostato sulla brace, strofinato d\'aglio, bagnato di olio EVO e coperto di verdure dell\'orto di stagione',
         pillar: 'ristorante' },
   6:  { title: 'Panzanella',
@@ -879,8 +885,8 @@ const PIATTO_PLAN = {
   7:  { title: 'Pappa al pomodoro',
         desc: 'I pomodori maturi dell\'orto del Ciliegio, pane di farro raffermo, aglio, basilico e olio EVO: la pappa al pomodoro è il manifesto dell\'estate toscana — semplice, genuina e irresistibile',
         pillar: 'ristorante' },
-  8:  { title: 'Cinghiale in umido con polenta di mais',
-        desc: 'Selvaggina locale brasata lentamente con il nostro Chianti rosso, aromi di macchia e verdure di stagione — servita con polenta di granturco macinata a pietra, il piatto forte dell\'agriturismo d\'agosto',
+  8:  { title: 'Pappardelle al cinghiale',
+        desc: 'Selvaggina locale brasata lentamente con il nostro Chianti rosso, aromi di macchia e verdure di stagione, a condire pappardelle di pasta fresca tirata a mano — l\'abbinamento classico della cucina di caccia toscana, il piatto forte dell\'agriturismo d\'agosto',
         pillar: 'ristorante' },
   9:  { title: 'Pici all\'aglione',
         desc: 'Pasta fresca tirata a mano con la salsa di pomodoro e aglio di Valdichiana: l\'aglione è meno pungente dell\'aglio comune e regala un sugo profumato e avvolgente, da abbinare al Sangiovese del Ciliegio',
@@ -889,7 +895,7 @@ const PIATTO_PLAN = {
         desc: 'L\'antipasto toscano d\'autunno per eccellenza: fegatini di pollo trifolati con cipolla, capperi e acciughe su pane toscano tostato — da abbinare al vino novello appena uscito dalla cantina del Ciliegio',
         pillar: 'ristorante' },
   11: { title: 'Bistecca alla Fiorentina con fagioli all\'uccelletto',
-        desc: 'Il grande piatto toscano: bistecca di Chianina (o locale) su brace viva, con i nostri fagioli borlotti all\'uccelletto con salvia e olio EVO — abbinamento con il Chianti Classico del Ciliegio',
+        desc: 'Il grande piatto toscano: bistecca di Chianina (o locale) su brace viva, con i nostri fagioli borlotti all\'uccelletto con salvia e olio EVO — abbinamento con il Chianti Colli Senesi del Ciliegio',
         pillar: 'ristorante' },
   12: { title: 'Panforte di Siena',
         desc: 'Il dolce senese per eccellenza: miele, mandorle, canditi e spezie in un impasto che si tramanda quasi identico da secoli — il modo più autentico di chiudere l\'anno e augurare buone feste ai nostri ospiti',
@@ -925,11 +931,11 @@ const PRODOTTO_PLAN = {
   9:  { title: 'Cereali antichi del Ciliegio',
         desc: 'Farro, orzo e grano monococco del raccolto estivo: scheda dei cereali, proprietà nutrizionali, ricette autunnali (zuppe, risotti, pane) e disponibilità online',
         pillar: 'shop' },
-  10: { title: 'Olio nuovo — prima spremitura',
+  10: { title: 'Vin Santo e Cantucci del Ciliegio',
+        desc: 'Il vino da meditazione della tradizione toscana: dolce, ambrato, invecchiato in caratelli — da abbinare ai cantucci alle mandorle per chiudere il pasto come si deve. Scopri la produzione del Ciliegio e ordina online',
+        pillar: 'vino' },
+  11: { title: 'Olio nuovo — prima spremitura',
         desc: 'È pronta la prima spremitura dell\'anno: colore verde brillante, profumo erbaceo, sentori di carciofo e mandorla fresca. Ordina subito l\'olio nuovo del Ciliegio — esaurimento garantito',
-        pillar: 'olio' },
-  11: { title: 'Olio EVO — fai scorta per l\'inverno',
-        desc: 'L\'olio nuovo è disponibile in bottiglia e in latta: ordina la tua fornitura invernale direttamente online con consegna a domicilio — abbinamenti con i piatti della tradizione toscana d\'autunno',
         pillar: 'olio' },
   12: { title: 'Box regalo del Ciliegio',
         desc: 'I cesti natalizi con i nostri prodotti: vino, olio, farine, legumi, distillati e dolci artigianali — spedizione gratuita in tutta Italia. Il regalo perfetto per chi ama i sapori autentici della Toscana',
