@@ -63,14 +63,14 @@ async function dropboxAccountEmail(token) {
   }
 }
 
-// Diagnostica: elenca il contenuto della cartella radice del Dropbox visto da questo
-// token, per capire se /IlCiliegio esiste davvero da questo punto di vista.
-async function dropboxListRoot(token) {
+// Diagnostica: elenca il contenuto di una cartella (path vuota = radice) vista da questo
+// token, per capire se il nome esatto di una sottocartella/file combacia con quello atteso.
+async function dropboxListFolder(token, path) {
   try {
     const res = await fetch(`${DROPBOX_API}/files/list_folder`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '' })
+      body: JSON.stringify({ path })
     });
     const data = await res.json();
     if (!res.ok) return `(errore: ${JSON.stringify(data)})`;
@@ -199,7 +199,9 @@ async function main() {
 
   const dbxToken = await dropboxAccessToken();
   console.log(`🔑 Account Dropbox autenticato: ${await dropboxAccountEmail(dbxToken)}`);
-  console.log(`📂 Contenuto cartella radice Dropbox: ${await dropboxListRoot(dbxToken)}`);
+  console.log(`📂 Radice Dropbox: ${await dropboxListFolder(dbxToken, '')}`);
+  console.log(`📂 Dentro /IlCiliegio: ${await dropboxListFolder(dbxToken, '/IlCiliegio')}`);
+  console.log(`📂 Dentro /IlCiliegio/SocialMedia: ${await dropboxListFolder(dbxToken, '/IlCiliegio/SocialMedia')}`);
 
   const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
   const overrides = piano.recurringOverrides || {};
