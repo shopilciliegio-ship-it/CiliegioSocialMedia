@@ -48,6 +48,38 @@ async function dropboxAccessToken() {
   return data.access_token;
 }
 
+// Diagnostica: a quale account Dropbox appartiene questo token (utile per capire se il
+// secret è collegato all'account giusto quando un path risulta "not_found" a sorpresa).
+async function dropboxAccountEmail(token) {
+  try {
+    const res = await fetch(`${DROPBOX_API}/users/get_current_account`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    return res.ok ? data.email : `(errore: ${JSON.stringify(data)})`;
+  } catch (err) {
+    return `(errore: ${err.message})`;
+  }
+}
+
+// Diagnostica: elenca il contenuto della cartella radice del Dropbox visto da questo
+// token, per capire se /IlCiliegio esiste davvero da questo punto di vista.
+async function dropboxListRoot(token) {
+  try {
+    const res = await fetch(`${DROPBOX_API}/files/list_folder`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '' })
+    });
+    const data = await res.json();
+    if (!res.ok) return `(errore: ${JSON.stringify(data)})`;
+    return data.entries.map(e => `${e['.tag']}:${e.path_display}`).join(', ') || '(vuota)';
+  } catch (err) {
+    return `(errore: ${err.message})`;
+  }
+}
+
 async function dropboxDownloadJson(token, path) {
   const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
     method: 'POST',
@@ -166,6 +198,9 @@ async function main() {
   console.log(`📅 Lunedì corrente (Europe/Rome): ${monday} — cerco il post "${postId}"`);
 
   const dbxToken = await dropboxAccessToken();
+  console.log(`🔑 Account Dropbox autenticato: ${await dropboxAccountEmail(dbxToken)}`);
+  console.log(`📂 Contenuto cartella radice Dropbox: ${await dropboxListRoot(dbxToken)}`);
+
   const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
   const overrides = piano.recurringOverrides || {};
   const post = overrides[postId];
