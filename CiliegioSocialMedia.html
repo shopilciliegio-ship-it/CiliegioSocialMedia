@@ -442,22 +442,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
       <button class="nav-item active" data-view="calendar" onclick="showView('calendar')">
         <span class="icon">📅</span> Piano editoriale
       </button>
-      <button class="nav-item" data-view="generate" onclick="showView('generate')">
-        <span class="icon">✨</span> Genera contenuti
-      </button>
-      <div class="nav-section">Strategia</div>
-      <button class="nav-item" data-view="pillars" onclick="showView('pillars')">
-        <span class="icon">🎯</span> Pilastri tematici
-      </button>
-      <button class="nav-item" data-view="formats" onclick="showView('formats')">
-        <span class="icon">📐</span> Format post
-      </button>
       <div class="nav-section">Operativo</div>
       <button class="nav-item" data-view="photos" onclick="showView('photos')">
         <span class="icon">📷</span> Archivio foto
-      </button>
-      <button class="nav-item" data-view="publish" onclick="showView('publish')">
-        <span class="icon">📤</span> Pubblica & schedula
       </button>
       <button class="nav-item" data-view="settings" onclick="showView('settings')">
         <span class="icon">⚙️</span> Impostazioni
@@ -465,10 +452,6 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     </nav>
 
     <div class="sidebar-footer">
-      <div class="api-status" id="api-status">
-        <div class="status-dot warn" id="api-dot"></div>
-        <span id="api-label">API key non configurata</span>
-      </div>
       <div class="drive-info" id="drive-info" style="margin-top:6px;">
         <span>🗄️</span> <span id="drive-label">Drive non connesso</span>
       </div>
@@ -498,9 +481,21 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.15.0',
+    date: '2026-09-18',
+    current: true,
+    description: 'Rimossa tutta la generazione AI a runtime, ormai superflua: ogni post (reminder del lunedì, e a breve la rotazione del venerdì) è deciso e approvato in anticipo, mai generato al momento. Eliminate le viste "Pilastri tematici", "Format post" e "Genera contenuti" (e i relativi bottoni "✨ Genera testi con AI" / "✨ Genera testi del mese" / "📅 Schedula su Meta"), la sezione "🔑 API Anthropic" in Impostazioni e l\'indicatore di stato API in sidebar. Il codice di supporto (prompt, calibrazione pilastro/stagione, PIATTO_PLAN/PRODOTTO_PLAN/STAGIONALITA_PLAN ecc.) resta in pancia al file, non raggiungibile da nessun bottone, solo come materiale grezzo per quando si costruirà la rotazione fissa del venerdì.'
+  },
+  {
+    version: '2.14.0',
+    date: '2026-09-18',
+    current: false,
+    description: 'Automazione pubblicazione lunedì: "✅ Approva questa settimana" ora genera in automatico la grafica IG (stessa pipeline del bottone manuale) e la salva su Dropbox (/IlCiliegio/SocialMedia/GraficaGenerata/{id}.jpg) al momento dell\'approvazione, non al momento del post — così tutto è già pronto prima di lunedì. Aggiunto lo script pubblica-social.js + workflow GitHub Actions (.github/workflows/pubblica-lunedi.yml): ogni lunedì alle 9:00 (Europe/Rome) legge piano.json da Dropbox, pubblica su Facebook la foto pulita e su Instagram la grafica con overlay, poi segna il post come "published" per evitare doppie pubblicazioni. Rimossa la vecchia sezione "Pubblica & schedula"/"Meta — Facebook & Instagram" (Page ID, Account ID, Access Token nel browser): era uno stub mai collegato a una pubblicazione reale ("Funzione in arrivo"), superato dalla GitHub Action che ora legge le credenziali da GitHub Secrets — più sicuro che tenerle in localStorage.'
+  },
+  {
     version: '2.13.1',
     date: '2026-09-17',
-    current: true,
+    current: false,
     description: 'Grafica IG: lo stemma dentro il badge era troppo piccolo — ora riempie quasi tutto il cerchio (cover-fit con clip circolare, prima era "contain" con parecchio margine vuoto). La scritta "Ovvia mimmi!" ora si ridimensiona per occupare sempre tutta la larghezza della foto (bordo a bordo) invece di una dimensione fissa in px, ed è posizionata un po\' più in alto. Dimensione/posizione di logo e scritta restano identiche a ogni foto — cambia solo il colore a rotazione.'
   },
   {
@@ -738,6 +733,9 @@ const APP_VERSION = VERSIONS.find(v => v.current).version;
 ═══════════════════════════════════════════════ */
 const DROPBOX_FILE_PATH   = '/IlCiliegio/SocialMedia/piano.json';
 const DROPBOX_PHOTO_FOLDER = '/IlCiliegio/SocialMedia/FotoPost';
+// Grafiche IG generate automaticamente all'approvazione settimanale (vedi approvaSettimana),
+// lette da qui dalla GitHub Action di pubblicazione del lunedì (pubblica-social.js).
+const DROPBOX_GRAPHIC_FOLDER = '/IlCiliegio/SocialMedia/GraficaGenerata';
 const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 const DROPBOX_AUTH_URL  = 'https://www.dropbox.com/oauth2/authorize';
@@ -1078,8 +1076,6 @@ const MONTH_SUFFIXES = { 8: ' – Vendemmia', 9: ' – Raccolta olive', 11: ' �
 
 // Genera una finestra rolling di 12 mesi a partire dal mese corrente, così il menu
 // non resta mai bloccato su un anno fisso (era hardcoded al 2025).
-// withSuffix=true aggiunge l'indicazione stagionale (solo per il generatore AI:
-// il valore va ripulito prima di salvarlo come p.month, vedi saveGeneratedToPost).
 function buildMonthOptions(withSuffix) {
   const now = new Date();
   const opts = [];
@@ -1184,7 +1180,6 @@ function generateRecurringPosts() {
    STATE
 ═══════════════════════════════════════════════ */
 const STATE = {
-  apiKey: '',
   dropboxAppKey: '',
   dropboxRefreshToken: '',
   dropboxAccessToken: '',
@@ -1199,10 +1194,7 @@ const STATE = {
     location: 'Monteriggioni, Siena – Chianti',
     tone: 'Caldo e familiare',
     language: 'Italiano',
-    styleExamples: '',
-    fbPage: '',
-    igAccount: '',
-    metaToken: ''
+    styleExamples: ''
   }
 };
 
@@ -1228,8 +1220,8 @@ function removeLegacyPlaceholders() {
 function extractRecurringOverrides() {
   const ov = {};
   STATE.recurringPosts.forEach(p => {
-    if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile) {
-      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '' };
+    if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile) {
+      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
     }
   });
   return ov;
@@ -1257,6 +1249,7 @@ function applyRecurringOverrides(source) {
     if (o.photoHint)                      p.photoHint = o.photoHint;
     if (o.photoFile)                      p.photoFile = o.photoFile;
     if (o.photoName)                      p.photoName = o.photoName;
+    if (o.graphicFile)                    p.graphicFile = o.graphicFile;
     if (o.status && o.status !== 'draft') p.status    = o.status;
   });
 }
@@ -1270,7 +1263,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (removeLegacyPlaceholders()) await autoSync();
   await handleDropboxRedirect();
   showView('calendar');
-  checkApiStatus();
+  updateDropboxStatus();
 });
 
 function loadFromStorage() {
@@ -1278,7 +1271,6 @@ function loadFromStorage() {
     const saved = localStorage.getItem('ciliegio_state');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed.apiKey)             STATE.apiKey = parsed.apiKey;
       if (parsed.dropboxAppKey)      STATE.dropboxAppKey = parsed.dropboxAppKey;
       if (parsed.dropboxRefreshToken) STATE.dropboxRefreshToken = parsed.dropboxRefreshToken;
       if (parsed.dropboxAccessToken) STATE.dropboxAccessToken = parsed.dropboxAccessToken;
@@ -1295,7 +1287,6 @@ function loadFromStorage() {
 function saveToStorage() {
   try {
     localStorage.setItem('ciliegio_state', JSON.stringify({
-      apiKey:           STATE.apiKey,
       dropboxAppKey:    STATE.dropboxAppKey,
       dropboxRefreshToken: STATE.dropboxRefreshToken,
       dropboxAccessToken:  STATE.dropboxAccessToken,
@@ -1307,16 +1298,7 @@ function saveToStorage() {
   } catch(e) {}
 }
 
-function checkApiStatus() {
-  const dot   = document.getElementById('api-dot');
-  const label = document.getElementById('api-label');
-  if (STATE.apiKey && STATE.apiKey.startsWith('sk-ant-')) {
-    dot.className = 'status-dot ok';
-    label.textContent = 'API Anthropic attiva';
-  } else {
-    dot.className = 'status-dot warn';
-    label.textContent = 'API key non configurata';
-  }
+function updateDropboxStatus() {
   const driveLabel = document.getElementById('drive-label');
   if (STATE.dropboxRefreshToken) {
     driveLabel.textContent = '📦 Dropbox connesso ✓';
@@ -1332,11 +1314,7 @@ function checkApiStatus() {
 ═══════════════════════════════════════════════ */
 const VIEW_TITLES = {
   calendar: 'Piano editoriale annuale',
-  generate: 'Genera contenuti',
-  pillars:  'Pilastri tematici',
-  formats:  'Format post',
   photos:   'Archivio foto',
-  publish:  'Pubblica & schedula',
   settings: 'Impostazioni'
 };
 
@@ -1346,13 +1324,8 @@ const VIEW_ACTIONS = {
     <button class="btn sm" onclick="saveToDropbox()" title="Salva piano su Dropbox">💾 Salva su Dropbox</button>
     <button class="btn sm" onclick="exportPlanTxt()" title="Esporta elenco date e post in un file di testo">📄 Esporta TXT</button>
     <button class="btn sm" onclick="addPostModal()">＋ Nuovo post</button>
-    <button class="btn sm primary" onclick="generateMonthContent()">✨ Genera testi del mese</button>
   `,
-  generate: '',
-  pillars: '',
-  formats: '',
   photos:  `<button class="btn sm" onclick="loadAndRenderPhotos()">🔄 Ricarica</button>`,
-  publish: '',
   settings: ''
 };
 
@@ -1367,11 +1340,7 @@ function showView(name) {
   const c = document.getElementById('main-content');
   switch(name) {
     case 'calendar': c.innerHTML = renderCalendar(); break;
-    case 'generate': c.innerHTML = renderGenerate(); break;
-    case 'pillars':  c.innerHTML = renderPillars();  break;
-    case 'formats':  c.innerHTML = renderFormats();  break;
     case 'photos':   c.innerHTML = renderPhotos();   break;
-    case 'publish':  c.innerHTML = renderPublish();  break;
     case 'settings': c.innerHTML = renderSettings(); break;
   }
 }
@@ -1556,93 +1525,14 @@ async function loadThumbsForPosts(posts) {
 /* ═══════════════════════════════════════════════
    VIEW: GENERATE
 ═══════════════════════════════════════════════ */
-function renderGenerate() {
-  return `
-    <div class="gen-panel">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Pilastro tematico</label>
-          <select id="gen-pillar">
-            <option value="vino">🍷 Vino & Cantina</option>
-            <option value="olio">🫒 Olio EVO</option>
-            <option value="ristorante">🍽️ Ristorante & Menu</option>
-            <option value="azienda">🏡 Agriturismo & Esperienze</option>
-            <option value="shop">🛒 Shop & Prodotti</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Mese di pubblicazione</label>
-          <select id="gen-month">
-            ${buildMonthOptions(true).map(m => `<option>${m}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Tono di voce</label>
-          <select id="gen-tone">
-            <option>Caldo e familiare</option>
-            <option>Storytelling agricolo</option>
-            <option>Informativo e appassionato</option>
-            <option>Promozionale con CTA forte</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Obiettivo</label>
-          <select id="gen-goal">
-            <option>Notorietà del brand</option>
-            <option>Prenotazioni ristorante</option>
-            <option>Vendite shop online</option>
-            <option>Engagement community</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group" style="margin-bottom:14px">
-        <label>Dettagli aggiuntivi (opzionale)</label>
-        <textarea id="gen-extra" placeholder="Es: stiamo promuovendo il nuovo Chianti Colli Senesi 2023, abbinato ai pici al cinghiale del menu di agosto..."></textarea>
-      </div>
-      <div class="form-group" style="margin-bottom:14px">
-        <label>Parte di una serie narrativa? (opzionale)</label>
-        <input id="gen-series" placeholder="Es: Giorno 2 della vendemmia — serie di 5 post">
-      </div>
-      <div style="display:flex; gap:8px; align-items:center">
-        <button class="btn primary" onclick="generateContent()" id="gen-btn" style="flex:1; justify-content:center; padding:10px 0;">
-          ✨ Genera testi per Facebook e Instagram
-        </button>
-        <button class="btn sm" onclick="clearOutputs()" title="Azzera output">✕ Pulisci</button>
-      </div>
-    </div>
-
-    <div id="output-area" style="display:none">
-      <div class="section-head">
-        <div class="section-title">Contenuti generati</div>
-        <div style="display:flex; gap:6px">
-          <button class="btn sm" onclick="saveGeneratedToPost()">💾 Salva nel piano editoriale</button>
-          <button class="btn sm primary" onclick="scheduleGenerated()">📅 Schedula su Meta</button>
-        </div>
-      </div>
-      <div class="output-grid">
-        <div class="output-card">
-          <div class="output-header fb">📘 Facebook</div>
-          <div class="output-body" id="fb-output">—</div>
-          <div class="output-footer">
-            <button class="btn sm" onclick="copyText('fb-output')">📋 Copia</button>
-            <button class="btn sm" onclick="editOutput('fb')">✏️ Modifica</button>
-          </div>
-        </div>
-        <div class="output-card">
-          <div class="output-header ig">📸 Instagram</div>
-          <div class="output-body" id="ig-output">—</div>
-          <div class="output-footer">
-            <button class="btn sm" onclick="copyText('ig-output')">📋 Copia</button>
-            <button class="btn sm" onclick="editOutput('ig')">✏️ Modifica</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 /* ═══════════════════════════════════════════════
    CLAUDE API HELPER
+   Nota: questa sezione (BUSINESS_INTRO, FORMAT_GUIDELINES, callClaude, ecc.) non è più
+   raggiungibile da nessuna vista dell'app (rimossa la generazione AI runtime: "Pilastri
+   tematici", "Format post", "Genera contenuti" — v2.15.0, tutto è a rotazione fissa
+   pre-approvata). Lasciata intatta solo come riferimento/materiale grezzo per quando si
+   costruirà la rotazione fissa del venerdì (stesso approccio di FOTO_ROTAZIONE) — non
+   viene più eseguita da nessun bottone.
 ═══════════════════════════════════════════════ */
 const BUSINESS_INTRO = `Sei il social media manager dell'Azienda Agricola Il Ciliegio di Monteriggioni (Siena), nel cuore del Chianti Colli Senesi, sulla Via Francigena. L'azienda è a conduzione familiare dal 1952 — oggi alla terza generazione. Produce e vende vino (Chianti Colli Senesi, spumante), olio EVO, cereali antichi, farine, legumi, distillati e dolci. Ha un ristorante con cucina tipica toscana a km zero e un agriturismo didattico. Sito: www.ilciliegio.com | WhatsApp prenotazioni: 329/1767348 | Shop: shop@ilciliegio.com
 
@@ -1762,286 +1652,11 @@ async function callClaude(prompt, maxTokens = 1500) {
   return JSON.parse(clean);
 }
 
-async function generateContent() {
-  if (!STATE.apiKey || !STATE.apiKey.startsWith('sk-ant-')) {
-    showToast('⚠️ Configura prima la API key in Impostazioni');
-    showView('settings');
-    return;
-  }
-
-  const pillar = document.getElementById('gen-pillar').value;
-  const month  = document.getElementById('gen-month').value;
-  const tone   = document.getElementById('gen-tone').value;
-  const goal   = document.getElementById('gen-goal').value;
-  const extra  = document.getElementById('gen-extra').value;
-  const series = document.getElementById('gen-series').value;
-
-  const btn = document.getElementById('gen-btn');
-  btn.innerHTML = '<span class="spinner"></span> Generazione in corso...';
-  btn.disabled = true;
-
-  document.getElementById('output-area').style.display = 'block';
-  document.getElementById('fb-output').textContent = 'Generazione in corso...';
-  document.getElementById('ig-output').textContent = 'Generazione in corso...';
-
-  const prompt = `${BUSINESS_INTRO}
-
-${buildStyleContext()}${buildCalibrationContext(pillar, month)}
-
-Devi creare due versioni di post social per il pilastro "${pillar}", da pubblicare in "${month}".
-Tono: ${tone}
-Obiettivo: ${goal}
-${extra ? 'Dettagli aggiuntivi: ' + extra : ''}
-${series ? `Nota: questo post fa parte di una serie narrativa (${series}) — scrivilo in modo che si colleghi coerentemente agli altri episodi, senza ripetere la stessa apertura o la stessa struttura già usata negli altri post della serie.` : ''}
-
-Rispondi ESCLUSIVAMENTE in JSON con questo formato (nessun testo fuori dal JSON):
-{
-  "facebook": "testo completo per Facebook",
-  "instagram": "testo per Instagram"
-}`;
-
-  try {
-    const parsed = await callClaude(prompt);
-    document.getElementById('fb-output').textContent = parsed.facebook || 'Errore nel parsing';
-    document.getElementById('ig-output').textContent = parsed.instagram || 'Errore nel parsing';
-    showToast('✅ Contenuti generati con successo!');
-  } catch(err) {
-    document.getElementById('fb-output').textContent = 'Errore: ' + err.message;
-    document.getElementById('ig-output').textContent = 'Errore: ' + err.message;
-    showToast('❌ Errore nella generazione — controlla la API key');
-  }
-
-  btn.innerHTML = '✨ Genera testi per Facebook e Instagram';
-  btn.disabled = false;
-}
-
-function clearOutputs() {
-  document.getElementById('output-area').style.display = 'none';
-}
-
-function copyText(id) {
-  const text = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(text).then(() => showToast('✅ Testo copiato!'));
-}
-
-function editOutput(platform) {
-  const id  = platform + '-output';
-  const el  = document.getElementById(id);
-  const old = el.textContent;
-  el.contentEditable = 'true';
-  el.style.background = 'var(--surface2)';
-  el.focus();
-  el.onblur = () => {
-    el.contentEditable = 'false';
-    el.style.background = '';
-    showToast('✅ Testo modificato');
-  };
-}
-
-const PILLAR_LABELS = {
-  vino: 'Vino & Cantina', olio: 'Olio EVO', ristorante: 'Ristorante & Menu',
-  azienda: 'Agriturismo & Esperienze', shop: 'Shop & Prodotti'
-};
-
-function saveGeneratedToPost() {
-  const fbText = document.getElementById('fb-output').textContent;
-  const igText = document.getElementById('ig-output').textContent;
-  if (!fbText || fbText === '—' || fbText.startsWith('Errore') || fbText === 'Generazione in corso...') {
-    showToast('⚠️ Genera prima i testi con AI');
-    return;
-  }
-
-  const pillar = document.getElementById('gen-pillar').value;
-  const month  = document.getElementById('gen-month').value;
-  const extra  = document.getElementById('gen-extra').value.trim();
-  const pillarLabel = PILLAR_LABELS[pillar] || pillar;
-
-  // Il calendario richiede il mese in formato esatto "NomeMese AAAA" (senza suffissi tipo "– Vendemmia").
-  const monthMatch = month.match(/^(\S+)\s+(\d{4})/);
-  const monthClean = monthMatch ? `${monthMatch[1]} ${monthMatch[2]}` : month;
-  const monthIdx   = monthMatch ? MONTH_NAMES_IT.indexOf(monthMatch[1]) : -1;
-  const dateLabel  = monthIdx > -1 ? `1 ${MONTH_SHORT_IT[monthIdx]}` : '';
-
-  STATE.posts.push({
-    id: 'p' + Date.now(),
-    status: 'ready',
-    fbText, igText,
-    title: extra ? extra.slice(0, 60) : pillarLabel,
-    date: dateLabel,
-    month: monthClean,
-    pillar,
-    desc: extra || pillarLabel,
-    platforms: ['fb', 'ig']
-  });
-
-  showToast('✅ Post salvato nel piano editoriale!');
-  showView('calendar');
-  autoSync();
-}
-
-function scheduleGenerated() {
-  if (!STATE.settings.metaToken) {
-    showToast('⚠️ Configura prima il token Meta in Pubblica & Schedula');
-    showView('publish');
-  } else {
-    showToast('📅 Funzione in arrivo con integrazione Meta API');
-  }
-}
-
-/* ═══════════════════════════════════════════════
-   VIEW: PILLARS
-═══════════════════════════════════════════════ */
-function renderPillars() {
-  const pillars = [
-    { icon:'🍷', name:'Vino & Cantina',          count:25, cls:'tag-vino',       bg:'var(--green-light)',  color:'var(--green-dark)',  desc:'Racconto della vigna, delle annate, del processo di vinificazione. Chianti Classico, Spumante, degustazioni. Il vino come identità familiare dal 1952.' },
-    { icon:'🫒', name:'Olio EVO',                count:15, cls:'tag-olio',       bg:'var(--amber-light)', color:'var(--amber)',        desc:'Dalla raccolta delle olive a novembre alla prima spremitura. Qualità, territorio, ricette. Olio come oro verde del Chianti.' },
-    { icon:'🍽️', name:'Ristorante & Menu',       count:25, cls:'tag-ristorante', bg:'var(--coral-light)', color:'var(--coral)',        desc:'Cucina tipica toscana con materie prime proprie. Piatti stagionali, eventi speciali, prenotazioni. Pici, cinghiale, ribollita, bistecca.' },
-    { icon:'🏡', name:'Agriturismo & Esperienze',count:20, cls:'tag-azienda',    bg:'var(--purple-light)',color:'var(--purple)',       desc:'Visite guidate, agriturismo didattico, degustazioni. Il Ciliegio come destinazione esperienziale nel Chianti senese.' },
-    { icon:'🛒', name:'Shop & Prodotti',         count:15, cls:'tag-shop',       bg:'var(--blue-light)',  color:'var(--blue)',         desc:'Cereali antichi, farine, legumi, distillati, dolci, vino e olio online. Regali di Natale, confezioni regalo, spedizioni in tutta Italia.' },
-  ];
-
-  let pillarCards = pillars.map(p => `
-    <div class="pillar-card" style="background:${p.bg}; color:${p.color}" onclick="showPillarDetail('${p.name}', \`${p.desc}\`)">
-      <div class="pillar-icon">${p.icon}</div>
-      <div class="pillar-name">${p.name}</div>
-      <div class="pillar-count">~${p.count} post/anno</div>
-    </div>
-  `).join('');
-
-  return `
-    <div class="section-head"><div class="section-title">I 5 pilastri editoriali (clicca per dettagli)</div></div>
-    <div class="pillar-grid">${pillarCards}</div>
-    <div class="section-head" style="margin-top:8px"><div class="section-title">Stagionalità editoriale</div></div>
-    <div class="season-table">
-      <table>
-        <thead><tr><th>Periodo</th><th>Evento chiave</th><th>Pilastro prioritario</th><th>Tono consigliato</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Gen – Mar</strong></td><td>Potatura viti, semina, cantina</td><td><span class="tag tag-azienda">Azienda agricola</span></td><td style="color:var(--text2)">Intimista, dietro le quinte</td></tr>
-          <tr><td><strong>Apr – Giu</strong></td><td>Primavera, riapertura ristorante</td><td><span class="tag tag-ristorante">Ristorante</span></td><td style="color:var(--text2)">Caldo, invitante, stagionale</td></tr>
-          <tr><td><strong>Lug – Ago</strong></td><td>Alta stagione turistica</td><td><span class="tag tag-azienda">Agriturismo</span></td><td style="color:var(--text2)">Esperienziale, turistico</td></tr>
-          <tr><td><strong>Set – Ott</strong></td><td>Vendemmia & raccolta olive</td><td><span class="tag tag-vino">Vino & Olio</span></td><td style="color:var(--text2)">Appassionato, autentico</td></tr>
-          <tr><td><strong>Nov – Dic</strong></td><td>Natale, confezioni regalo</td><td><span class="tag tag-shop">Shop online</span></td><td style="color:var(--text2)">Regalo, famiglia, tradizione</td></tr>
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function showPillarDetail(name, desc) {
-  openModal(name, `
-    <p style="font-size:13px; color:var(--text2); line-height:1.7; margin-bottom:20px">${desc}</p>
-    <button class="btn primary" onclick="closeModalDirect(); showView('generate')">✨ Genera un post per questo pilastro</button>
-  `);
-}
-
-/* ═══════════════════════════════════════════════
-   VIEW: FORMATS
-═══════════════════════════════════════════════ */
-function renderFormats() {
-  return `
-    <div class="settings-section">
-      <div class="settings-title">📘 Format Facebook</div>
-      <div style="font-size:13px; color:var(--text2); line-height:1.8; margin-bottom:12px">
-        <strong>Lunghezza:</strong> 150–250 parole<br>
-        <strong>Struttura:</strong> Hook emozionale → Storytelling → Dettaglio prodotto/servizio → CTA con link o WhatsApp → Domanda finale<br>
-        <strong>Emoji:</strong> 3–5 per post, integrate nel testo<br>
-        <strong>CTA:</strong> "Prenota il tuo tavolo →", "Ordina online", "Scrivici su WhatsApp"<br>
-        <strong>Link:</strong> www.ilciliegio.com oppure wa.me/393291767348<br>
-        <strong>Hashtag:</strong> 3–5 hashtag rilevanti in fondo<br>
-        <strong>Domanda finale:</strong> ogni post chiude con una domanda aperta ai follower, per generare commenti
-      </div>
-      <div style="background:var(--surface2); border-radius:var(--radius); padding:14px; font-size:12px; color:var(--text2); line-height:1.7;">
-        <em>Esempio struttura:</em><br><br>
-        🌅 [Hook stagionale o immagine evocativa]<br><br>
-        [2-3 paragrafi di storytelling sul prodotto/esperienza]<br><br>
-        📍 Siamo a Monteriggioni, nel cuore del Chianti senese.<br>
-        👉 [CTA con link]<br><br>
-        [Domanda finale ai follower]<br><br>
-        #IlCiliegio #ChiantiCollisenesi #AgricolturaToscana
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-title">📸 Format Instagram</div>
-      <div style="font-size:13px; color:var(--text2); line-height:1.8; margin-bottom:12px">
-        <strong>Lunghezza:</strong> 80–120 parole (caption concisa)<br>
-        <strong>Struttura:</strong> Prima riga impattante (max 125 caratteri, ferma il pollice nel feed) → 2-3 frasi evocative → CTA → Hashtag separati<br>
-        <strong>Emoji:</strong> Più abbondanti, visive e atmosferiche<br>
-        <strong>Hashtag:</strong> 15–20, mix obbligatorio italiano + inglese (per i turisti sulla Via Francigena) + nicchia brand + generalisti<br>
-        <strong>Stories:</strong> Rimanda sempre alle stories per contenuti dietro le quinte
-      </div>
-      <div style="background:var(--surface2); border-radius:var(--radius); padding:14px; font-size:12px; color:var(--text2); line-height:1.7;">
-        <em>Esempio struttura:</em><br><br>
-        🍷 [Prima riga forte — max 125 caratteri]<br><br>
-        [2-3 frasi evocative e sensoriali]<br><br>
-        🔗 Link in bio per prenotazioni e shop<br><br>
-        .<br>.<br>.<br>
-        #IlCiliegio #Agriturismo #ChiantiCollisenesi #VinoToscano #OlioEVO #Monteriggioni #Siena #Tuscany #ItalianWine #FarmToTable #Chianti #TuscanyFood #TerzaGenerazione #ViaFrancigena #KmZero
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-title">📅 Frequenza consigliata</div>
-      <div style="font-size:13px; color:var(--text2); line-height:1.8">
-        <strong>Facebook:</strong> 1 post/settimana — mercoledì o giovedì (ore 18:00–20:00)<br>
-        <strong>Instagram:</strong> 1–2 post/settimana — venerdì o sabato (ore 10:00–12:00 o 18:00–21:00)<br>
-        <strong>Stories:</strong> 3–4 stories/settimana su Instagram (non pianificate, spontanee)
-      </div>
-    </div>
-  `;
-}
-
-/* ═══════════════════════════════════════════════
-   VIEW: PUBLISH
-═══════════════════════════════════════════════ */
-function renderPublish() {
-  const connected = !!STATE.settings.metaToken;
-  return `
-    <div class="connect-card">
-      <div class="connect-icon">${connected ? '✅' : '🔗'}</div>
-      <div class="connect-title">${connected ? 'Meta API connessa' : 'Connetti le API Meta'}</div>
-      <div class="connect-desc">
-        Per pubblicare e schedulare direttamente su Facebook e Instagram hai bisogno di un <strong>Page Access Token</strong> dalla tua app Meta.
-      </div>
-      ${!connected ? `
-      <div class="connect-steps">
-        <ol>
-          <li>Vai su <a href="https://developers.facebook.com" target="_blank" style="color:var(--blue)">developers.facebook.com</a> e crea una app (tipo "Business")</li>
-          <li>Aggiungi il prodotto <strong>Facebook Login</strong> e <strong>Instagram Graph API</strong></li>
-          <li>Genera un <strong>Page Access Token</strong> con permessi: <code>pages_manage_posts</code>, <code>instagram_content_publish</code></li>
-          <li>Incolla il token qui sotto nelle impostazioni</li>
-        </ol>
-      </div>
-      <button class="btn primary" style="width:100%; justify-content:center" onclick="showView('settings')">
-        ⚙️ Vai alle impostazioni per inserire il token
-      </button>
-      ` : `
-      <div style="background:var(--green-light); color:var(--green-dark); padding:12px 16px; border-radius:var(--radius); font-size:13px; margin-bottom:16px;">
-        Token Meta configurato. Puoi schedulare i post generati direttamente dalla sezione "Genera contenuti".
-      </div>
-      <button class="btn" style="width:100%; justify-content:center" onclick="showView('generate')">
-        ✨ Vai a generare contenuti
-      </button>
-      `}
-    </div>
-  `;
-}
-
 /* ═══════════════════════════════════════════════
    VIEW: SETTINGS
 ═══════════════════════════════════════════════ */
 function renderSettings() {
   return `
-    <div class="settings-section">
-      <div class="settings-title">🔑 API Anthropic</div>
-      <div class="form-group" style="margin-bottom:12px">
-        <label>API Key (sk-ant-...)</label>
-        <input type="password" id="s-apikey" placeholder="sk-ant-api03-..." value="${STATE.apiKey}" autocomplete="off">
-      </div>
-      <div style="font-size:12px; color:var(--text3); margin-bottom:12px; line-height:1.6">
-        💡 Usa un <strong>GitHub Secret</strong> chiamato <code>ANTHROPIC_API_KEY</code> per non esporre la chiave nel codice. La chiave viene salvata solo nel browser locale.
-      </div>
-      <button class="btn primary sm" onclick="saveApiKey()">Salva API key</button>
-    </div>
-
     <div class="settings-section">
       <div class="settings-title">📦 Dropbox</div>
       <div class="form-group" style="margin-bottom:12px">
@@ -2092,40 +1707,27 @@ function renderSettings() {
       </div>
       <div class="form-group" style="margin-bottom:12px">
         <label>Post di riferimento (stile)</label>
-        <textarea id="s-styleexamples" rows="5" placeholder="Incolla qui 1-3 post pubblicati su FB/IG di cui ti piace lo stile — l'AI li userà come riferimento di tono e voce (non copierà i contenuti)">${STATE.settings.styleExamples || ''}</textarea>
-      </div>
-      <div style="font-size:12px; color:var(--text3); margin-bottom:12px; line-height:1.6">
-        💡 Le linee guida della pagina "📐 Format post" e questi esempi vengono inclusi automaticamente in ogni generazione AI.
+        <textarea id="s-styleexamples" rows="5" placeholder="Incolla qui 1-3 post pubblicati su FB/IG di cui ti piace lo stile, come riferimento di tono e voce">${STATE.settings.styleExamples || ''}</textarea>
       </div>
       <button class="btn primary sm" onclick="saveSettings()">Salva impostazioni</button>
     </div>
 
     <div class="settings-section">
       <div class="settings-title">📤 Meta — Facebook & Instagram</div>
-      <div class="form-grid">
-        <div class="form-group"><label>Facebook Page ID</label><input id="s-fbpage" placeholder="Es: 123456789" value="${STATE.settings.fbPage}"></div>
-        <div class="form-group"><label>Instagram Account ID</label><input id="s-igaccount" placeholder="Es: 987654321" value="${STATE.settings.igAccount}"></div>
+      <div style="font-size:12px; color:var(--text3); line-height:1.6">
+        Le credenziali Meta (Page ID, Account ID, Access Token) non si inseriscono più qui: la pubblicazione
+        reale del lunedì gira lato server nella GitHub Action <code>pubblica-lunedi.yml</code>, che le legge
+        da GitHub Secrets. Tenerle anche nel browser non servirebbe a nulla (questa pagina non pubblica
+        direttamente) e le esporrebbe inutilmente nel localStorage.
       </div>
-      <div class="form-group" style="margin-bottom:12px">
-        <label>Page Access Token</label>
-        <input type="password" id="s-metatoken" placeholder="EAABsbCS..." value="${STATE.settings.metaToken}" autocomplete="off">
-      </div>
-      <button class="btn primary sm" onclick="saveMetaSettings()">Salva credenziali Meta</button>
     </div>
   `;
-}
-
-function saveApiKey() {
-  STATE.apiKey = document.getElementById('s-apikey').value.trim();
-  saveToStorage();
-  checkApiStatus();
-  showToast(STATE.apiKey ? '✅ API key Anthropic salvata!' : '⚠️ API key rimossa');
 }
 
 function saveDropboxSettings() {
   STATE.dropboxAppKey = document.getElementById('s-dropboxappkey').value.trim();
   saveToStorage();
-  checkApiStatus();
+  updateDropboxStatus();
   showToast(STATE.dropboxAppKey ? '✅ App Key salvata! Ora clicca "Connetti con Dropbox".' : '⚠️ App Key rimossa');
 }
 
@@ -2138,14 +1740,6 @@ function saveSettings() {
   saveToStorage();
   showToast('✅ Impostazioni salvate');
   autoSync();
-}
-
-function saveMetaSettings() {
-  STATE.settings.fbPage    = document.getElementById('s-fbpage').value.trim();
-  STATE.settings.igAccount = document.getElementById('s-igaccount').value.trim();
-  STATE.settings.metaToken = document.getElementById('s-metatoken').value.trim();
-  saveToStorage();
-  showToast('✅ Credenziali Meta salvate');
 }
 
 /* ═══════════════════════════════════════════════
@@ -2221,11 +1815,10 @@ function openPostDetail(id) {
     ${p.recurringType === 'reminder' ? `
     <div style="margin-bottom:16px">
       <button class="btn primary" style="width:100%" onclick="approvaSettimana('${id}')">✅ Approva questa settimana</button>
-      <div style="margin-top:6px; font-size:12px; color:var(--text2)">Conferma che il menù di questa settimana è stato aggiornato sul sito e i post sono pronti per andare online lunedì.</div>
+      <div style="margin-top:6px; font-size:12px; color:var(--text2)">Conferma che il menù di questa settimana è stato aggiornato sul sito e i post sono pronti per andare online lunedì. Genera e salva subito anche la grafica IG: lunedì alle 9:00 la pubblicazione (Facebook + Instagram) parte da sola.</div>
     </div>` : ''}
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
-      <button class="btn" onclick="generateForPost('${id}')">✨ Genera testi con AI</button>
       <button class="btn danger" onclick="deletePost('${id}')">${deleteLabel}</button>
     </div>
   `);
@@ -2235,13 +1828,37 @@ function openPostDetail(id) {
   }
 }
 
-function approvaSettimana(id) {
+// Approva il reminder della settimana: genera SUBITO la grafica IG (stessa resa che si
+// vedrebbe cliccando "Genera grafica IG" a mano) e la salva su Dropbox, così alla GitHub
+// Action di lunedì non resta che leggere e pubblicare — nessuna generazione al momento del post.
+async function approvaSettimana(id) {
   const found = findPostById(id);
   if (!found) return;
-  found.post.status = 'approvato';
+  const p = found.post;
+  if (!p.photoFile) {
+    showToast('⚠️ Manca la foto abbinata: scegline una prima di approvare');
+    return;
+  }
   closeModalDirect();
   showView('calendar');
-  showToast('✅ Settimana approvata!');
+  showToast('⏳ Genero la grafica IG e la salvo su Dropbox...');
+  try {
+    const blob = await downloadDropboxImageBlob(p.photoFile);
+    const rot = FOTO_ROTAZIONE.find(r => `${DROPBOX_PHOTO_FOLDER}/${r.file}`.toLowerCase() === p.photoFile);
+    const idx = rot ? rot.numero : [...p.id].reduce((a,c) => a + c.charCodeAt(0), 0);
+    const colore = _coloreGraficaPerIndice(idx);
+    const canvas = await disegnaGraficaIG(blob, IG_GRAPHIC_TITOLO, colore);
+    const graphicBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    const graphicPath = `${DROPBOX_GRAPHIC_FOLDER}/${id}.jpg`;
+    await uploadDropboxBlob(graphicPath, graphicBlob);
+    p.graphicFile = graphicPath;
+    showToast('✅ Grafica IG pronta su Dropbox');
+  } catch(err) {
+    console.error(err);
+    showToast('⚠️ Grafica IG non salvata (' + err.message + ') — al momento del post userò la foto semplice anche su IG, a meno che tu non la generi a mano prima di lunedì');
+  }
+  p.status = 'approvato';
+  showToast('✅ Settimana approvata! Tutto pronto per lunedì.');
   autoSync();
 }
 
@@ -2271,19 +1888,6 @@ function deletePost(id) {
   showView('calendar');
   showToast('🗑 Rimosso');
   autoSync();
-}
-
-async function generateForPost(id) {
-  const found = findPostById(id);
-  if (!found || !STATE.apiKey) { showToast('⚠️ Configura prima la API key'); return; }
-  const p = found.post;
-  closeModalDirect();
-  showView('generate');
-  setTimeout(async () => {
-    if (p.pillar) document.getElementById('gen-pillar').value = p.pillar;
-    document.getElementById('gen-extra').value = p.title + ' — ' + p.desc;
-    await generateContent();
-  }, 300);
 }
 
 /* ═══════════════════════════════════════════════
@@ -2350,61 +1954,6 @@ function saveNewPost() {
   showView('calendar');
   showToast('✅ Post aggiunto al piano');
   autoSync();
-}
-
-/* ═══════════════════════════════════════════════
-   GENERA TESTI DEL MESE
-   Genera i testi FB/IG per tutti i post del mese visualizzato,
-   in base al titolo/descrizione attuali (anche se modificati).
-   I reminder del lunedì vengono generati in un'unica chiamata
-   con un "taglio" diverso ciascuno, per non essere ripetitivi.
-═══════════════════════════════════════════════ */
-async function generateMonthContent() {
-  if (!STATE.apiKey || !STATE.apiKey.startsWith('sk-ant-')) {
-    showToast('⚠️ Configura prima la API key in Impostazioni');
-    showView('settings');
-    return;
-  }
-
-  const { year, month } = STATE.calendarMonth;
-  const monthLabel = `${MONTH_NAMES_IT[month]} ${year}`;
-  const allPosts = [...STATE.posts, ...STATE.recurringPosts];
-  const monthPosts = allPosts.filter(p => {
-    const d = parsePostDate(p);
-    return d && d.year === year && d.month === month;
-  });
-
-  if (!monthPosts.length) {
-    showToast(`ℹ️ Nessun post in programma per ${monthLabel}`);
-    return;
-  }
-  // I reminder del lunedì hanno testo e foto fissi dalla rotazione delle 55 foto curate
-  // (vedi FOTO_ROTAZIONE/makeRecurringPost) — niente AI, non vanno mai rigenerati qui.
-  const others = monthPosts.filter(p => p.recurringType !== 'reminder');
-  if (!others.length) {
-    showToast(`ℹ️ ${monthLabel} ha solo reminder del lunedì: già pronti dalla rotazione foto, nessuna generazione necessaria.`);
-    return;
-  }
-  const hasRecurring = others.some(p => p.recurringType);
-  const overwriteMsg = hasRecurring
-    ? `Generare i testi FB/IG per i ${others.length} post di ${monthLabel} (esclusi i reminder del lunedì, già pronti)? I testi esistenti verranno sovrascritti (per i post ricorrenti anche la foto assegnata automaticamente dall'archivio).`
-    : `Generare i testi FB/IG per i ${others.length} post di ${monthLabel}? I testi esistenti verranno sovrascritti.`;
-  if (!confirm(overwriteMsg)) return;
-
-  showToast(`⏳ Generazione testi per ${monthLabel} (${others.length} post)...`);
-
-  try {
-    const allPhotos = (await listDropboxPhotos()) || [];
-    for (const p of others) await generateSinglePost(p, allPhotos);
-
-    saveToStorage();
-    showView('calendar');
-    showToast(`✅ Testi generati per ${others.length} post di ${monthLabel}`);
-    autoSync();
-  } catch (err) {
-    showToast('❌ Errore nella generazione: ' + err.message);
-    console.error(err);
-  }
 }
 
 // Indice della settimana del reminder rispetto al primo lunedì (RECURRING_START): alterna
@@ -2702,6 +2251,27 @@ async function downloadDropboxImageBlob(path) {
     throw new Error(`HTTP ${res.status}: ${msg}`);
   }
   return res.blob();
+}
+
+// Carica un Blob binario (es. la grafica IG generata) su Dropbox al path indicato,
+// sovrascrivendo se già esiste. Variante binaria di saveToDropbox (che carica solo JSON).
+async function uploadDropboxBlob(path, blob) {
+  const token = await getDropboxAccessToken();
+  if (!token) throw new Error('Dropbox non connesso');
+  const res = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${token}`,
+      'Content-Type':    'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true })
+    },
+    body: blob
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text; try { msg = JSON.parse(text).error_summary || text; } catch(e) {}
+    throw new Error(`HTTP ${res.status}: ${msg}`);
+  }
 }
 
 // Scritta fissa in overlay su tutte le grafiche IG, uguale al claim usato nei testi
@@ -3133,7 +2703,7 @@ function disconnectDropbox() {
   STATE.dropboxAccessTokenExpiry = 0;
   STATE.dropboxConnected = false;
   saveToStorage();
-  checkApiStatus();
+  updateDropboxStatus();
   showView('settings');
   showToast('📦 Dropbox disconnesso');
 }

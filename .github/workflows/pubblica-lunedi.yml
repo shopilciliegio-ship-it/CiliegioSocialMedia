@@ -1,0 +1,39 @@
+name: Pubblica social del lunedì
+
+on:
+  schedule:
+    # Due orari per coprire il cambio ora legale/solare: lo script controlla comunque
+    # l'ora reale a Europe/Rome e non fa nulla se non sono davvero le 9:00 lì.
+    - cron: '0 7 * * 1'  # 09:00 Europe/Rome quando è in vigore CEST (ora legale, UTC+2)
+    - cron: '0 8 * * 1'  # 09:00 Europe/Rome quando è in vigore CET (ora solare, UTC+1)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Test a secco: logga cosa pubblicherebbe, senza toccare Facebook/Instagram'
+        type: boolean
+        default: true
+      force:
+        description: 'Ignora il controllo giorno/ora (solo per test manuali)'
+        type: boolean
+        default: true
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Pubblica reminder della settimana
+        env:
+          DROPBOX_APP_KEY:        ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_REFRESH_TOKEN:  ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          FB_PAGE_ID:              ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN:   ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          IG_USER_ID:              ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN:        ${{ secrets.IG_ACCESS_TOKEN }}
+          # Cron (produzione): pubblica davvero. workflow_dispatch: rispetta l'input scelto.
+          DRY_RUN:   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+        run: node pubblica-social.js
