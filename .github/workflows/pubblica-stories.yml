@@ -25,6 +25,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Serve solo alla grafica delle story (@napi-rs/canvas). Se l'installazione fallisce non blocca
+      # niente: lo script ripiega sui JPG del menù semplici, meglio una story senza header che nessuna story.
+      - name: Installa dipendenze grafica story
+        continue-on-error: true
+        run: npm ci --omit=dev
       - name: Pubblica stories del giorno
         env:
           DROPBOX_APP_KEY:        ${{ secrets.DROPBOX_APP_KEY }}

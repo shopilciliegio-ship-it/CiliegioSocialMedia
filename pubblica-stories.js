@@ -8,6 +8,11 @@
 // Gira ogni giorno alle 9:30 Europe/Rome (.github/workflows/pubblica-stories.yml), mezz'ora
 // dopo il post settimanale del lunedì per non sovrapporsi.
 //
+// GRAFICA: l'immagine pubblicata NON è il JPG del menù nudo, ma una story 1080×1920 composta da
+// story-grafica.js (scritta ICCHESSIMANGIAOGGI?, colore della settimana, badge col logo). Si compone al
+// momento della pubblicazione partendo dal JPG che c'è in quel momento su GitHub, così i cambi dell'ultimo
+// minuto al menù passano da soli. Se la composizione fallisce, esce comunque il JPG semplice.
+//
 // GATE DI APPROVAZIONE: non viene pubblicato NULLA se Luca non ha cliccato "Approva questa
 // settimana" in CSM per la settimana corrente (reminder r_<lunedì>_reminder con status
 // 'approvato', oppure 'published' se il post del lunedì è già uscito). Se piano.json non è
@@ -30,6 +35,9 @@ const DROPBOX_FILE_PATH = '/IlCiliegio/SocialMedia/piano.json';
 // mostrare "Pubblicata" sul giorno del calendario. File separato da piano.json apposta: il browser
 // salva piano.json per intero e potrebbe sovrascrivere ciò che scrive l'Action.
 const DROPBOX_LOG_PATH  = '/IlCiliegio/SocialMedia/stories-log.json';
+// Immagini composte delle story (le legge Instagram tramite link temporaneo Dropbox).
+const DROPBOX_STORY_FOLDER = '/IlCiliegio/SocialMedia/GraficaGenerata/stories';
+const LOGO_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/ciliegio_trasparente.png';
 
 const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
@@ -94,6 +102,63 @@ async function dropboxUploadJson(token, path, obj) {
     body: JSON.stringify(obj, null, 2)
   });
   if (!res.ok) throw new Error(`Upload ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+}
+
+async function dropboxUploadBytes(token, path, buf) {
+  const res = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${token}`,
+      'Content-Type':    'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true })
+    },
+    body: buf
+  });
+  if (!res.ok) throw new Error(`Upload ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+}
+
+// Link diretto temporaneo: l'endpoint /media di Instagram vuole un image_url pubblico (stesso metodo del post del lunedì).
+async function dropboxTempLink(token, path) {
+  const res = await fetch(`${DROPBOX_API}/files/get_temporary_link`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Temp link ${path} fallito: ${data.error_summary || res.status}`);
+  return data.link;
+}
+
+async function fetchBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download ${url} fallito: HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// Grafica delle story (scritta ICCHESSIMANGIAOGGI? + colore della settimana + badge, vedi story-grafica.js).
+// Se il modulo o la sua dipendenza non sono disponibili (npm ci fallito), si ripiega sull'immagine semplice:
+// meglio una story senza header che nessuna story.
+function loadStoryGrafica() {
+  try { return require('./story-grafica'); }
+  catch (err) { console.warn(`⚠️ Grafica story non disponibile (${err.message}) — userò i JPG del menù semplici.`); return null; }
+}
+
+// Compone la story di un servizio e la rende raggiungibile da Instagram. Qualunque errore → immagine semplice.
+async function prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, dbxToken }) {
+  if (!grafica || !logoBuf) return { url: plainUrl, composed: false };
+  try {
+    const menuBuf = await fetchBuffer(plainUrl);
+    const jpg = await grafica.composeStory({ menuBuf, logoBuf, color });
+    // Nome fisso per numero (02…15): i file si sovrascrivono ogni settimana, la cartella non cresce.
+    const dbxPath = `${DROPBOX_STORY_FOLDER}/story-${num}.jpg`;
+    await dropboxUploadBytes(dbxToken, dbxPath, jpg);
+    const link = await dropboxTempLink(dbxToken, dbxPath);
+    console.log(`🎨 Story ${label} composta (${Math.round(jpg.length / 1024)} KB) → Dropbox ${dbxPath}`);
+    return { url: link, composed: true, dbxPath };
+  } catch (err) {
+    console.warn(`⚠️ Composizione story ${label} fallita (${err.message}) — userò il JPG del menù semplice.`);
+    return { url: plainUrl, composed: false };
+  }
 }
 
 function romeDateStr() {
@@ -188,8 +253,29 @@ async function main() {
   }
   console.log(`✅ Settimana approvata (${postId}, stato: ${status}).`);
 
+  // Immagini: composizione con la grafica (colore della settimana = quello del post del lunedì, dal numero
+  // della foto del reminder). Anche in dry run si compone e si salva su Dropbox (utile per vederla), ma non si pubblica.
+  const grafica = loadStoryGrafica();
+  let logoBuf = null, color = null;
+  if (grafica) {
+    try {
+      logoBuf = await fetchBuffer(LOGO_URL);
+      const idx = grafica.weekIndexFromPhoto((overrides[postId] || {}).photoFile);
+      if (idx == null) console.warn('⚠️ Numero foto del reminder non riconoscibile — uso il primo colore della palette.');
+      color = grafica.colorForIndex(idx == null ? 0 : idx);
+      console.log(`🎨 Colore della settimana: ${color} (foto n. ${idx})`);
+    } catch (err) {
+      console.warn(`⚠️ Logo non scaricabile (${err.message}) — userò i JPG del menù semplici.`);
+    }
+  }
+  const prepared = {};
+  for (const [label, num, plainUrl] of [['pranzo', info.pranzo, pranzoUrl], ['cena', info.cena, cenaUrl]]) {
+    prepared[label] = await prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, dbxToken });
+  }
+
   if (DRY_RUN) {
     console.log('\n🧪 DRY RUN attivo — nessuna story pubblicata davvero.');
+    for (const label of ['pranzo', 'cena']) console.log(`   ${label}: ${prepared[label].composed ? 'grafica composta (vedi Dropbox)' : 'immagine semplice'}`);
     return;
   }
 
@@ -198,12 +284,12 @@ async function main() {
 
   let hadError = false;
   const results = {};
-  for (const [label, url] of [['pranzo', pranzoUrl], ['cena', cenaUrl]]) {
+  for (const label of ['pranzo', 'cena']) {
     try {
       console.log(`\n📤 Pubblico story ${label}...`);
-      const result = await igPublishStory(igUserId, igToken, url);
+      const result = await igPublishStory(igUserId, igToken, prepared[label].url);
       console.log(`✅ Story ${label} pubblicata: media id ${result.id}`);
-      results[label] = { ok: true, id: result.id, at: new Date().toISOString() };
+      results[label] = { ok: true, id: result.id, composed: prepared[label].composed, at: new Date().toISOString() };
     } catch (err) {
       hadError = true;
       console.error(`❌ Story ${label} fallita: ${err.message}`);

@@ -1,0 +1,117 @@
+// story-grafica.js
+//
+// Compone l'immagine di una IG Story (1080×1920, formato 9:16): sfondo nel colore della
+// settimana, scritta fissa "ICCHESSIMANGIAOGGI?" in Titan One (stesso font di "OVVIA MIMMI!"),
+// il menù del giorno come "cartolina" e il badge tondo con lo stemma del Ciliegio.
+//
+// Stesso stile della grafica del post del lunedì (disegnaGraficaIG in CiliegioSocialMedia.html):
+// stessa palette settimanale, stesso badge (cerchio colorato + solo lo stemma dorato del logo).
+// Posizione e dimensione di scritta, menù e badge sono identiche su ogni story: cambia solo il colore.
+//
+// Usa @napi-rs/canvas (Node, nessun browser). Il font è nel repo (fonts/TitanOne-Regular.ttf, licenza OFL).
+
+const path = require('path');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+
+GlobalFonts.registerFromPath(path.join(__dirname, 'fonts', 'TitanOne-Regular.ttf'), 'Titan One');
+
+const W = 1080, H = 1920;
+const TITOLO = 'ICCHESSIMANGIAOGGI?';
+const LOGO_ICON_CUT = 0.64; // frazione superiore del file logo occupata dal solo stemma dorato
+const SAFE_TOP = 250;       // IG copre in alto nome profilo/chiudi
+const SAFE_BOTTOM = 300;    // ... e in basso la barra "invia messaggio"
+
+// Stessa palette e stessa rotazione della grafica IG del lunedì (IG_GRAPHIC_COLORS in CSM).
+const COLORS = ['#E8552F', '#1D9E75', '#BA7517', '#993C1D', '#185FA5', '#C9302C', '#534AB7', '#0F6E56', '#D68910', '#993556'];
+function colorForIndex(idx) { return COLORS[((idx % COLORS.length) + COLORS.length) % COLORS.length]; }
+
+// Il numero della foto della settimana è l'inizio del nome file ("01 degustazione-vini....jpg").
+function weekIndexFromPhoto(photoFile) {
+  const m = String(photoFile || '').split('/').pop().match(/^(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Badge tondo: cerchio del colore della settimana + solo lo stemma dorato (come sul post del lunedì),
+// con un anello crema perché il fondo della story ha lo stesso colore del badge.
+function drawBadge(ctx, logo, cx, cy, r, color) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.restore();
+  const sw = logo.width, sh = logo.height * LOGO_ICON_CUT;
+  const size = r * 1.88;
+  const sc = Math.max(size / sw, size / sh);
+  const lw = sw * sc, lh = sh * sc;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(logo, 0, 0, sw, sh, cx - lw / 2, cy - lh / 2, lw, lh);
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx, cy, r - 3, 0, Math.PI * 2);
+  ctx.lineWidth = 6; ctx.strokeStyle = '#FFF3DC'; ctx.stroke();
+}
+
+// Scritta a una riga, ridimensionata per occupare esattamente maxW (dimensione dipende solo dal testo fisso).
+function fitTitle(ctx, maxW) {
+  ctx.font = '100px "Titan One"';
+  const fontSize = Math.round(100 * (maxW / ctx.measureText(TITOLO).width));
+  ctx.font = `${fontSize}px "Titan One"`;
+  return fontSize;
+}
+function drawTitle(ctx, x, baselineY, fontSize) {
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = fontSize * 0.13; ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.strokeText(TITOLO, x, baselineY);
+  ctx.fillStyle = '#FFF3DC';
+  ctx.fillText(TITOLO, x, baselineY);
+}
+
+function drawCard(ctx, menu, top, bottom) {
+  const h = bottom - top, w = h * menu.width / menu.height;
+  const x = (W - w) / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
+  roundRect(ctx, x, top, w, h, 30); ctx.fillStyle = '#FFF3DC'; ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, x + 10, top + 10, w - 20, h - 20, 22); ctx.clip();
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(menu, x + 10, top + 10, w - 20, h - 20);
+  ctx.restore();
+  return { x, y: top, w, h };
+}
+
+// Layout unico (variante "A" scelta da Luca): scritta a tutta larghezza sotto la zona coperta da IG,
+// cartolina del menù al centro, badge come sigillo sull'angolo in alto a destra della cartolina.
+// ATTENZIONE: la stessa geometria è replicata in CiliegioSocialMedia.html (disegnaStoryCanvas, usata per
+// l'anteprima nel calendario): se cambi qualcosa qui, cambia anche là.
+async function composeStory({ menuBuf, logoBuf, color }) {
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+  const [menu, logo] = await Promise.all([loadImage(menuBuf), loadImage(logoBuf)]);
+
+  ctx.fillStyle = color; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(255,255,255,0.12)'); g.addColorStop(1, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const pad = 64;
+  const fs = fitTitle(ctx, W - pad * 2);
+  drawTitle(ctx, pad, SAFE_TOP + 50 + fs * 0.72, fs);
+  const card = drawCard(ctx, menu, 480, H - SAFE_BOTTOM);
+  drawBadge(ctx, logo, card.x + card.w - 26, card.y + 24, 66, color);
+  return canvas.toBuffer('image/jpeg', 92);
+}
+
+module.exports = { composeStory, colorForIndex, weekIndexFromPhoto, COLORS, TITOLO };

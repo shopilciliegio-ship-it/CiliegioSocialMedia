@@ -1,0 +1,9 @@
+{
+  "name": "ciliegio-social-media",
+  "private": true,
+  "description": "Script GitHub Actions per la pubblicazione social del Ciliegio (i due script gira senza dipendenze, tranne la grafica delle story)",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.9"
+  }
+}

@@ -292,7 +292,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .pill-missed   { background: var(--surface2); color: var(--text3); text-decoration: line-through; }
 .tag-story     { background: var(--pink-light); color: var(--pink); }
 .story-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.story-preview-grid img { width: 100%; border-radius: var(--radius); display: block; background: var(--surface2); }
+.story-preview-grid img, .story-preview-grid canvas { width: 100%; height: auto; border-radius: var(--radius); display: block; background: var(--surface2); }
 @media (max-width: 720px) { .story-preview-grid { grid-template-columns: 1fr; } }
 
 /* ── GENERATE ── */
@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.20.0',
+    version: '2.21.0',
     date: '2026-09-21',
     current: true,
+    description: 'Le story del giorno ora hanno una veste: la GitHub Action (story-grafica.js) compone al momento della pubblicazione un\'immagine 9:16 con la scritta fissa ICCHESSIMANGIAOGGI? in Titan One, sfondo nel colore della settimana (stesso della grafica IG del lunedì), il menù del giorno come cartolina e il cerchio col logo a sigillo sull\'angolo. Se la composizione fallisce esce il JPG del menù semplice. L\'anteprima nel dettaglio story del calendario mostra la story vera (stessa composizione, ridisegnata nel browser).'
+  },
+  {
+    version: '2.20.0',
+    date: '2026-09-21',
+    current: false,
     description: 'Story del giorno nel calendario: ogni giorno compare "📲 Story del giorno" (pranzo + cena, 9:30). Stato calcolato, mai salvato: "In attesa di approvazione" finché la settimana non è approvata, "In programma 9:30" dopo "✅ Approva questa settimana" (con anteprima delle due immagini prese dal sito su GitHub), "Pubblicate ✓" quando la GitHub Action le ha davvero pubblicate (letto da stories-log.json su Dropbox, sola lettura), "Errore" o "Non pubblicate" negli altri casi. Piccole icone di stato (✅ 🕘 ⚠️) sui chip del calendario, anche per il reminder del lunedì. Le story non entrano nell\'esportazione TXT del piano.'
   },
   {
@@ -1671,6 +1677,9 @@ function storyInfo(p) {
     return pd && pd.year === monday.getFullYear() && pd.month === monday.getMonth() && pd.day === monday.getDate();
   });
   const weekApproved = !!rem && (rem.status === 'approvato' || rem.status === 'published');
+  // Colore della settimana = quello della grafica IG del lunedì (stesso indice: numero della foto del reminder)
+  const numFoto = rem && rem.photoFile ? (String(rem.photoFile).split('/').pop().match(/^(\d+)/) || [])[1] : null;
+  const color = _coloreGraficaPerIndice(numFoto ? parseInt(numFoto, 10) : 0);
 
   const entry = (STATE.storiesLog.stories || {})[p.storyDate];
   const okBoth = entry && entry.pranzo && entry.pranzo.ok && entry.cena && entry.cena.ok;
@@ -1686,7 +1695,7 @@ function storyInfo(p) {
   const daysAhead = Math.round((dt - today0) / 86400000);
   const previewable = weekApproved && daysAhead >= 0 && daysAhead <= 7;
   const urlFor = (num, srv) => STORY_IMG_BASE + encodeURIComponent(`${num}-${dayInfo.name}-${srv}.jpg`);
-  return { status, dt, entry, weekApproved, previewable,
+  return { status, dt, entry, weekApproved, previewable, color,
            urls: { pranzo: urlFor(dayInfo.pranzo, 'pranzo'), cena: urlFor(dayInfo.cena, 'cena') } };
 }
 
@@ -1732,6 +1741,96 @@ async function loadStoriesLog() {
   }
 }
 
+// Anteprima della story COSÌ COME USCIRÀ: stessa composizione di story-grafica.js (quella che la GitHub Action
+// usa davvero alle 9:30), rifatta con il Canvas 2D del browser. Se cambi qualcosa lì, cambia anche qui.
+const STORY_W = 1080, STORY_H = 1920, STORY_TITOLO = 'ICCHESSIMANGIAOGGI?';
+const STORY_SAFE_TOP = 250, STORY_SAFE_BOTTOM = 300;
+
+function _storyRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+async function disegnaStoryCanvas(menu, logo, colore) {
+  await document.fonts.load('96px "Titan One"'); // vedi nota in disegnaGraficaIG: senza attesa il canvas usa il font di sistema
+  await document.fonts.ready;
+  const canvas = document.createElement('canvas');
+  canvas.width = STORY_W; canvas.height = STORY_H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = colore; ctx.fillRect(0, 0, STORY_W, STORY_H);
+  const g = ctx.createLinearGradient(0, 0, 0, STORY_H);
+  g.addColorStop(0, 'rgba(255,255,255,0.12)'); g.addColorStop(1, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+  // Scritta a tutta larghezza, sotto la zona che Instagram copre in alto
+  const pad = 64;
+  ctx.font = '100px "Titan One", sans-serif';
+  const fs = Math.round(100 * ((STORY_W - pad * 2) / ctx.measureText(STORY_TITOLO).width));
+  ctx.font = `${fs}px "Titan One", sans-serif`;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const ty = STORY_SAFE_TOP + 50 + fs * 0.72;
+  ctx.lineWidth = fs * 0.13; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.strokeText(STORY_TITOLO, pad, ty);
+  ctx.fillStyle = '#FFF3DC'; ctx.fillText(STORY_TITOLO, pad, ty);
+
+  // Cartolina del menù
+  const top = 480, bottom = STORY_H - STORY_SAFE_BOTTOM;
+  const ch = bottom - top, cw = ch * menu.width / menu.height, cx0 = (STORY_W - cw) / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
+  _storyRoundRect(ctx, cx0, top, cw, ch, 30); ctx.fillStyle = '#FFF3DC'; ctx.fill();
+  ctx.restore();
+  ctx.save();
+  _storyRoundRect(ctx, cx0 + 10, top + 10, cw - 20, ch - 20, 22); ctx.clip();
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(menu, cx0 + 10, top + 10, cw - 20, ch - 20);
+  ctx.restore();
+
+  // Badge tondo a sigillo sull'angolo in alto a destra: cerchio del colore della settimana + solo lo stemma + anello crema
+  if (logo) {
+    const bx = cx0 + cw - 26, by = top + 24, br = 66;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 4;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fillStyle = colore; ctx.fill();
+    ctx.restore();
+    const sw = logo.width, sh = logo.height * IG_LOGO_ICON_CUT, size = br * 1.88;
+    const sc = Math.max(size / sw, size / sh), lw = sw * sc, lh = sh * sc;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(logo, 0, 0, sw, sh, bx - lw / 2, by - lh / 2, lw, lh);
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(bx, by, br - 3, 0, Math.PI * 2);
+    ctx.lineWidth = 6; ctx.strokeStyle = '#FFF3DC'; ctx.stroke();
+  }
+  return canvas;
+}
+
+// Disegna le due anteprime dentro i contenitori già presenti nel modale. Se qualcosa non va (rete, CORS),
+// ripiega sull'immagine semplice del menù, meglio di un riquadro vuoto.
+async function montaAnteprimaStory(containerId, menuUrl, colore) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  try {
+    const menu = await new Promise((resolve, reject) => {
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => resolve(im); im.onerror = () => reject(new Error('menù non scaricabile'));
+      im.src = menuUrl;
+    });
+    const logo = await _loadIgLogo();
+    const canvas = await disegnaStoryCanvas(menu, logo, colore);
+    if (!document.getElementById(containerId)) return; // modale chiuso nel frattempo
+    el.innerHTML = ''; el.appendChild(canvas);
+  } catch (err) {
+    console.warn('Anteprima story:', err.message);
+    el.innerHTML = `<img src="${menuUrl}" alt="menù">`;
+  }
+}
+
 function openStoryDetail(p) {
   const si = storyInfo(p);
   const pill = storyPill(si);
@@ -1761,18 +1860,18 @@ function openStoryDetail(p) {
 
   const preview = si.previewable ? `
     <div class="form-group" style="margin-bottom:12px">
-      <label>👀 Anteprima — le due immagini che usciranno come story</label>
+      <label>👀 Anteprima — le due story così come usciranno</label>
       <div class="story-preview-grid">
         <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
           <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px">🍽️ Story pranzo</div>
-          <img src="${si.urls.pranzo}" alt="Menù pranzo">
+          <div id="story-prev-pranzo" class="story-prev-box"><div style="font-size:12px; color:var(--text2); padding:40px 0; text-align:center">⏳ Preparo l'anteprima...</div></div>
         </div>
         <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
           <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px">🌙 Story cena</div>
-          <img src="${si.urls.cena}" alt="Menù cena">
+          <div id="story-prev-cena" class="story-prev-box"><div style="font-size:12px; color:var(--text2); padding:40px 0; text-align:center">⏳ Preparo l'anteprima...</div></div>
         </div>
       </div>
-      <div style="margin-top:8px; font-size:12px; color:var(--text2); line-height:1.5">Sono i JPG che ci sono adesso nella cartella del sito su GitHub (gli stessi del menù online). Se un servizio è chiuso o al completo, vedi l'immagine generica «AL COMPLETO».</div>
+      <div style="margin-top:8px; font-size:12px; color:var(--text2); line-height:1.5">Alle 9:30 la GitHub Action compone la story così: scritta ICCHESSIMANGIAOGGI?, colore della settimana e cerchio col logo, con dentro il JPG del menù che c'è in quel momento su GitHub. Se cambi il menù prima delle 9:30, esce la versione aggiornata. Se un servizio è chiuso o al completo, dentro c'è l'immagine generica «AL COMPLETO».</div>
     </div>` : `
     <div style="margin-bottom:12px; background:var(--surface2); border-radius:var(--radius); padding:10px 12px; font-size:12px; color:var(--text2); line-height:1.5">
       Anteprima non disponibile: compare dopo l'approvazione della settimana e solo per i giorni da oggi in avanti (i file del menù vengono sostituiti ogni settimana, quelli dei giorni passati non ci sono più).
@@ -1786,8 +1885,12 @@ function openStoryDetail(p) {
     </div>
     <div style="margin-bottom:14px; font-size:13px; color:var(--text2); line-height:1.6">${msg}</div>
     ${preview}
-    <div style="font-size:12px; color:var(--text3)">Le story non hanno testo né grafica: escono i JPG del menù così come sono. Non si modificano da qui.</div>
+    <div style="font-size:12px; color:var(--text3)">Le story non hanno testo da scrivere: la scritta è fissa e il menù è quello del giorno. Non si modificano da qui.</div>
   `);
+  if (si.previewable) {
+    montaAnteprimaStory('story-prev-pranzo', si.urls.pranzo, si.color);
+    montaAnteprimaStory('story-prev-cena', si.urls.cena, si.color);
+  }
 }
 
 function renderPostRow(p) {
