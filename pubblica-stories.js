@@ -8,6 +8,11 @@
 // Gira ogni giorno alle 9:30 Europe/Rome (.github/workflows/pubblica-stories.yml), mezz'ora
 // dopo il post settimanale del lunedì per non sovrapporsi.
 //
+// GATE DI APPROVAZIONE: non viene pubblicato NULLA se Luca non ha cliccato "Approva questa
+// settimana" in CSM per la settimana corrente (reminder r_<lunedì>_reminder con status
+// 'approvato', oppure 'published' se il post del lunedì è già uscito). Se piano.json non è
+// leggibile o lo stato non è chiaro, vale la regola sicura: non pubblicare.
+//
 // Vengono postate SEMPRE entrambe le immagini (pranzo + cena), tutti i giorni: se il servizio
 // è chiuso/al completo, in immagini-sito/ c'è comunque il file generico "AL COMPLETO" (vedi
 // Completa-Immagini-Mancanti.ps1 nel repo Ciliegio Menu) — non c'è mai un giorno senza file.
@@ -16,6 +21,11 @@
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 const IMG_BASE  = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito/';
+
+const DROPBOX_API       = 'https://api.dropboxapi.com/2';
+const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
+const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
+const DROPBOX_FILE_PATH = '/IlCiliegio/SocialMedia/piano.json';
 
 const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
@@ -37,6 +47,40 @@ const DAY_INFO = {
   Sat: { name: 'sabato',    pranzo: '12', cena: '13' },
   Sun: { name: 'domenica',  pranzo: '14', cena: '15' },
 };
+
+async function dropboxAccessToken() {
+  const res = await fetch(DROPBOX_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: need('DROPBOX_REFRESH_TOKEN'), client_id: need('DROPBOX_APP_KEY') })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Refresh token Dropbox fallito: ${data.error_description || data.error}`);
+  return data.access_token;
+}
+
+async function dropboxDownloadJson(token, path) {
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) }
+  });
+  if (!res.ok) throw new Error(`Download ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// Lunedì della settimana corrente in Europe/Rome ('YYYY-MM-DD'), stesso formato degli id
+// "r_YYYY-MM-DD_reminder" usati da CiliegioSocialMedia.html e da pubblica-social.js.
+function currentMondayRome() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short'
+  }).formatToParts(new Date());
+  const map = {}; parts.forEach(p => map[p.type] = p.value);
+  const dowMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+  const dow = dowMap[map.weekday];
+  const today = new Date(`${map.year}-${map.month}-${map.day}T00:00:00Z`);
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  return new Date(today.getTime() + diffToMonday * 86400000).toISOString().slice(0, 10);
+}
 
 function romeWeekday() {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', weekday: 'short' }).format(new Date());
@@ -86,6 +130,18 @@ async function main() {
   console.log(`📅 Oggi (Europe/Rome): ${info.name}`);
   console.log(`🍽️ Pranzo: ${pranzoUrl}`);
   console.log(`🌙 Cena: ${cenaUrl}`);
+
+  // Gate di approvazione, fail-closed: qualunque errore (Dropbox, file mancante) o stato
+  // diverso da approvato/published fa uscire senza pubblicare nulla.
+  const postId = `r_${currentMondayRome()}_reminder`;
+  const dbxToken = await dropboxAccessToken();
+  const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
+  const status = ((piano.recurringOverrides || {})[postId] || {}).status;
+  if (status !== 'approvato' && status !== 'published') {
+    console.log(`⛔ Settimana NON approvata (${postId}, stato: ${status || 'nessun dato'}) — non pubblico nessuna story.`);
+    return;
+  }
+  console.log(`✅ Settimana approvata (${postId}, stato: ${status}).`);
 
   if (DRY_RUN) {
     console.log('\n🧪 DRY RUN attivo — nessuna story pubblicata davvero.');
