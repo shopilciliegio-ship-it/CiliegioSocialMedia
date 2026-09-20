@@ -26,6 +26,10 @@ const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 const DROPBOX_FILE_PATH = '/IlCiliegio/SocialMedia/piano.json';
+// Registro delle story pubblicate, scritto SOLO da questa Action e letto da CSM (sola lettura) per
+// mostrare "Pubblicata" sul giorno del calendario. File separato da piano.json apposta: il browser
+// salva piano.json per intero e potrebbe sovrascrivere ciò che scrive l'Action.
+const DROPBOX_LOG_PATH  = '/IlCiliegio/SocialMedia/stories-log.json';
 
 const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
@@ -68,6 +72,34 @@ async function dropboxDownloadJson(token, path) {
   return res.json();
 }
 
+// Come dropboxDownloadJson, ma "file non esiste ancora" (409) restituisce null invece di errore.
+async function dropboxDownloadJsonOrNull(token, path) {
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) }
+  });
+  if (res.status === 409) return null;
+  if (!res.ok) throw new Error(`Download ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+async function dropboxUploadJson(token, path, obj) {
+  const res = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${token}`,
+      'Content-Type':    'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true })
+    },
+    body: JSON.stringify(obj, null, 2)
+  });
+  if (!res.ok) throw new Error(`Upload ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+}
+
+function romeDateStr() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 // Lunedì della settimana corrente in Europe/Rome ('YYYY-MM-DD'), stesso formato degli id
 // "r_YYYY-MM-DD_reminder" usati da CiliegioSocialMedia.html e da pubblica-social.js.
 function currentMondayRome() {
@@ -80,6 +112,18 @@ function currentMondayRome() {
   const today = new Date(`${map.year}-${map.month}-${map.day}T00:00:00Z`);
   const diffToMonday = dow === 0 ? -6 : 1 - dow;
   return new Date(today.getTime() + diffToMonday * 86400000).toISOString().slice(0, 10);
+}
+
+// CSM (CiliegioSocialMedia.html) ricava l'id del reminder con toISOString(), cioè in UTC: in un
+// browser europeo la mezzanotte locale di lunedì cade ancora domenica in UTC, quindi il post
+// del lunedì 21/9 viene salvato come "r_2026-09-20_reminder" invece di "r_2026-09-21_reminder".
+// Per non dipendere dal fuso del browser si cercano entrambi gli id (esatto e giorno prima):
+// vince quello già approvato/pubblicato, altrimenti il primo che esiste.
+function pickReminderId(overrides, monday) {
+  const prev = new Date(new Date(monday + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+  const candidates = [`r_${monday}_reminder`, `r_${prev}_reminder`];
+  const ok = candidates.find(id => overrides[id] && ['approvato', 'published'].includes(overrides[id].status));
+  return ok || candidates.find(id => overrides[id]) || candidates[0];
 }
 
 function romeWeekday() {
@@ -133,10 +177,11 @@ async function main() {
 
   // Gate di approvazione, fail-closed: qualunque errore (Dropbox, file mancante) o stato
   // diverso da approvato/published fa uscire senza pubblicare nulla.
-  const postId = `r_${currentMondayRome()}_reminder`;
   const dbxToken = await dropboxAccessToken();
   const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
-  const status = ((piano.recurringOverrides || {})[postId] || {}).status;
+  const overrides = piano.recurringOverrides || {};
+  const postId = pickReminderId(overrides, currentMondayRome());
+  const status = (overrides[postId] || {}).status;
   if (status !== 'approvato' && status !== 'published') {
     console.log(`⛔ Settimana NON approvata (${postId}, stato: ${status || 'nessun dato'}) — non pubblico nessuna story.`);
     return;
@@ -152,15 +197,32 @@ async function main() {
   const igToken  = need('IG_ACCESS_TOKEN');
 
   let hadError = false;
+  const results = {};
   for (const [label, url] of [['pranzo', pranzoUrl], ['cena', cenaUrl]]) {
     try {
       console.log(`\n📤 Pubblico story ${label}...`);
       const result = await igPublishStory(igUserId, igToken, url);
       console.log(`✅ Story ${label} pubblicata: media id ${result.id}`);
+      results[label] = { ok: true, id: result.id, at: new Date().toISOString() };
     } catch (err) {
       hadError = true;
       console.error(`❌ Story ${label} fallita: ${err.message}`);
+      results[label] = { ok: false, error: String(err.message).slice(0, 300), at: new Date().toISOString() };
     }
+  }
+
+  // Registro per CSM. Le story sono già uscite: se la scrittura del registro fallisce si avvisa
+  // soltanto (niente exit code rosso, niente ripubblicazione), CSM mostrerà "non pubblicata".
+  try {
+    const log = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
+    log.stories = log.stories || {};
+    const day = romeDateStr();
+    log.stories[day] = { ...(log.stories[day] || {}), ...results };
+    log.lastUpdated = new Date().toISOString();
+    await dropboxUploadJson(dbxToken, DROPBOX_LOG_PATH, log);
+    console.log(`💾 Registro story aggiornato su Dropbox (${day}).`);
+  } catch (err) {
+    console.warn(`⚠️ Story pubblicate ma registro Dropbox non aggiornato: ${err.message}`);
   }
   if (hadError) process.exitCode = 1;
 }

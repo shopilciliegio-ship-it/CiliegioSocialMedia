@@ -139,6 +139,18 @@ function currentMondayRome() {
   return monday.toISOString().slice(0, 10);
 }
 
+// CSM (CiliegioSocialMedia.html) ricava l'id del reminder con toISOString(), cioè in UTC: in un
+// browser europeo la mezzanotte locale di lunedì cade ancora domenica in UTC, quindi il post
+// del lunedì 21/9 viene salvato come "r_2026-09-20_reminder" invece di "r_2026-09-21_reminder".
+// Per non dipendere dal fuso del browser si cercano entrambi gli id (esatto e giorno prima):
+// vince quello già approvato/pubblicato, altrimenti il primo che esiste.
+function pickReminderId(overrides, monday) {
+  const prev = new Date(new Date(monday + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+  const candidates = [`r_${monday}_reminder`, `r_${prev}_reminder`];
+  const ok = candidates.find(id => overrides[id] && ['approvato', 'published'].includes(overrides[id].status));
+  return ok || candidates.find(id => overrides[id]) || candidates[0];
+}
+
 function romeWeekday() {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', weekday: 'short' }).format(new Date());
 }
@@ -194,8 +206,7 @@ async function main() {
   }
 
   const monday = currentMondayRome();
-  const postId = `r_${monday}_reminder`;
-  console.log(`📅 Lunedì corrente (Europe/Rome): ${monday} — cerco il post "${postId}"`);
+  console.log(`📅 Lunedì corrente (Europe/Rome): ${monday} — cerco il reminder della settimana`);
 
   const dbxToken = await dropboxAccessToken();
   console.log(`🔑 Account Dropbox autenticato: ${await dropboxAccountEmail(dbxToken)}`);
@@ -205,6 +216,8 @@ async function main() {
 
   const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
   const overrides = piano.recurringOverrides || {};
+  const postId = pickReminderId(overrides, monday);
+  console.log(`🔎 Reminder trovato con id "${postId}"`);
   const post = overrides[postId];
 
   if (!post) {
