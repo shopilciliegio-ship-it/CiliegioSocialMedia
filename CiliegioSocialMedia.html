@@ -288,6 +288,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .pill-approvato{ background: var(--green); color: #fff; }
 .pill-scheduled{ background: var(--blue-light); color: var(--blue); }
 .pill-published{ background: var(--purple-light); color: var(--purple); }
+.pill-error    { background: var(--coral-light); color: var(--coral); }
+.pill-missed   { background: var(--surface2); color: var(--text3); text-decoration: line-through; }
+.tag-story     { background: var(--pink-light); color: var(--pink); }
+.story-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.story-preview-grid img { width: 100%; border-radius: var(--radius); display: block; background: var(--surface2); }
+@media (max-width: 720px) { .story-preview-grid { grid-template-columns: 1fr; } }
 
 /* ── GENERATE ── */
 .gen-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 20px; }
@@ -548,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.20.0',
+    date: '2026-09-21',
+    current: true,
+    description: 'Story del giorno nel calendario: ogni giorno compare "📲 Story del giorno" (pranzo + cena, 9:30). Stato calcolato, mai salvato: "In attesa di approvazione" finché la settimana non è approvata, "In programma 9:30" dopo "✅ Approva questa settimana" (con anteprima delle due immagini prese dal sito su GitHub), "Pubblicate ✓" quando la GitHub Action le ha davvero pubblicate (letto da stories-log.json su Dropbox, sola lettura), "Errore" o "Non pubblicate" negli altri casi. Piccole icone di stato (✅ 🕘 ⚠️) sui chip del calendario, anche per il reminder del lunedì. Le story non entrano nell\'esportazione TXT del piano.'
+  },
+  {
     version: '2.19.0',
     date: '2026-09-18',
-    current: true,
+    current: false,
     description: 'App responsive per telefono (serve per far lavorare un collaboratore da mobile): sidebar diventa un menu a scomparsa (☰ in alto, si chiude da sola cambiando vista), il calendario passa da griglia 7 colonne a elenco verticale dei giorni con post (nasconde i giorni vuoti, altrimenti sarebbe uno scroll infinito), le griglie a due colonne (form, anteprima FB/IG nel dettaglio post) si impilano una sopra l\'altra. Verificato con screenshot headless a 390px (telefono) e 1280px (desktop, nessuna regressione).'
   },
   {
@@ -827,6 +839,21 @@ const DROPBOX_PHOTO_FOLDER = '/IlCiliegio/SocialMedia/FotoPost';
 // Grafiche IG generate automaticamente all'approvazione settimanale (vedi approvaSettimana),
 // lette da qui dalla GitHub Action di pubblicazione del lunedì (pubblica-social.js).
 const DROPBOX_GRAPHIC_FOLDER = '/IlCiliegio/SocialMedia/GraficaGenerata';
+// Registro delle story pubblicate: lo scrive SOLO la GitHub Action pubblica-stories.js, CSM lo legge
+// in sola lettura per mostrare "Pubblicate" sul giorno del calendario.
+const DROPBOX_STORIES_LOG_PATH = '/IlCiliegio/SocialMedia/stories-log.json';
+// Le story usano i JPG del menù già pubblici su GitHub (stessi file che legge pubblica-stories.js:
+// numerazione canonica 02–15 e nome giorno con accento). Indice = Date.getDay() (0=domenica).
+const STORY_IMG_BASE = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito/';
+const STORY_DAY_INFO = [
+  { name: 'domenica',  pranzo: '14', cena: '15' },
+  { name: 'lunedì',    pranzo: '02', cena: '03' },
+  { name: 'martedì',   pranzo: '04', cena: '05' },
+  { name: 'mercoledì', pranzo: '06', cena: '07' },
+  { name: 'giovedì',   pranzo: '08', cena: '09' },
+  { name: 'venerdì',   pranzo: '10', cena: '11' },
+  { name: 'sabato',    pranzo: '12', cena: '13' },
+];
 const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
 const DROPBOX_AUTH_URL  = 'https://www.dropbox.com/oauth2/authorize';
@@ -1184,6 +1211,7 @@ const RECURRING_TYPES = {
   prodotto:  { icon: '📦', label: 'Prodotto del mese',     cls: 'tag-prodotto' },
   tematico:  { icon: '🌿', label: 'Stagionalità del mese', cls: 'tag-tematico' },
   whatsnext: { icon: '🔭', label: 'What\'s Next?',         cls: 'tag-azienda' },
+  story:     { icon: '📲', label: 'Story del giorno',      cls: 'tag-story' },
 };
 
 function makeRecurringPost(type, date) {
@@ -1245,6 +1273,29 @@ function makeRecurringPost(type, date) {
   };
 }
 
+// Data locale come 'YYYY-MM-DD' (NON toISOString: in fuso europeo sposterebbe la data indietro di un giorno).
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Story giornaliere (pranzo + cena, 9:30): post "virtuali" solo per il calendario. Stato, anteprima e
+// data di pubblicazione non sono salvati: si calcolano ogni volta da storyInfo() a partire
+// dall'approvazione della settimana e dal registro scritto dalla GitHub Action.
+function makeStoryPost(date) {
+  const dateStr = localDateStr(date);
+  return {
+    id: `s_${dateStr}_story`,
+    recurringType: 'story',
+    storyDate: dateStr,
+    date: `${date.getDate()} ${MONTH_SHORT_IT[date.getMonth()]}`,
+    month: `${MONTH_NAMES_IT[date.getMonth()]} ${date.getFullYear()}`,
+    title: 'Story: menù del giorno',
+    desc: 'Pranzo + cena su Instagram Stories, ogni giorno alle 9:30',
+    pillar: 'ristorante', platforms: ['ig'], format: 'story',
+    status: 'draft', fbText: '', igText: '', photoFile: '', photoName: ''
+  };
+}
+
 function generateRecurringPosts() {
   const posts   = [];
   const start   = new Date(RECURRING_START     + 'T00:00:00');
@@ -1263,6 +1314,7 @@ function generateRecurringPosts() {
     if (dow === 1) {
       posts.push(makeRecurringPost('reminder', new Date(d)));
     }
+    posts.push(makeStoryPost(new Date(d)));
   }
   return posts;
 }
@@ -1280,6 +1332,8 @@ const STATE = {
   calendarMonth: (() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; })(),
   posts: getDefaultPosts(),
   recurringPosts: generateRecurringPosts(),
+  storiesLog: {},          // { stories: { 'YYYY-MM-DD': { pranzo:{ok,id,at}, cena:{...} } } } — da stories-log.json (sola lettura)
+  storiesLogLoaded: false,
   settings: {
     companyName: 'Società Agricola Il Ciliegio',
     location: 'Monteriggioni, Siena – Chianti',
@@ -1311,6 +1365,7 @@ function removeLegacyPlaceholders() {
 function extractRecurringOverrides() {
   const ov = {};
   STATE.recurringPosts.forEach(p => {
+    if (p.recurringType === 'story') return; // le story non hanno stato salvato: si calcola da storyInfo()
     if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile) {
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
     }
@@ -1355,6 +1410,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   await handleDropboxRedirect();
   showView('calendar');
   updateDropboxStatus();
+  // Registro story (sola lettura): in background, poi ridisegna il calendario se è ancora la vista aperta.
+  loadStoriesLog().then(() => { if (STATE.storiesLogLoaded && STATE.currentView === 'calendar') showView('calendar'); });
 });
 
 function loadFromStorage() {
@@ -1497,7 +1554,7 @@ function renderCalendarGrid(year, month) {
     const chips = posts.slice(0, 3).map(p => {
       if (p.recurringType) {
         const rt = RECURRING_TYPES[p.recurringType];
-        return `<div class="cal-chip ${rt.cls}">${rt.icon} ${rt.label}</div>`;
+        return `<div class="cal-chip ${rt.cls}">${rt.icon} ${rt.label}${chipMark(p)}</div>`;
       }
       const pt = PILLAR_TAGS[p.pillar] || { cls:'tag-azienda', icon:'📌' };
       return `<div class="cal-chip ${pt.cls}">${pt.icon} ${p.title}</div>`;
@@ -1561,7 +1618,7 @@ function exportPlanTxt() {
   const allPosts = [...STATE.posts, ...STATE.recurringPosts];
   const items = allPosts
     .map(p => ({ post: p, d: parsePostDate(p) }))
-    .filter(x => x.d)
+    .filter(x => x.d && x.post.recurringType !== 'story') // le story quotidiane non fanno parte del piano esportato
     .sort((a, b) => (a.d.year - b.d.year) || (a.d.month - b.d.month) || (a.d.day - b.d.day));
 
   if (!items.length) {
@@ -1586,6 +1643,153 @@ function exportPlanTxt() {
   showToast('✅ File TXT esportato!');
 }
 
+/* ═══════════════════════════════════════════════
+   STORY DEL GIORNO — stato, anteprima, registro
+   Stato (calcolato, mai salvato):
+     published → la GitHub Action ha pubblicato pranzo+cena (dal registro stories-log.json)
+     error     → almeno una delle due è fallita o ne è uscita una sola
+     missed    → giorno passato senza pubblicazione nel registro
+     scheduled → settimana approvata: partono da sole alle 9:30
+     waiting   → settimana NON approvata: non parte niente
+     unknown   → giorno passato ma registro non ancora caricato (Dropbox non connesso)
+═══════════════════════════════════════════════ */
+function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function storyInfo(p) {
+  const [y, m, d] = p.storyDate.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const now = new Date();
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayInfo = STORY_DAY_INFO[dt.getDay()];
+
+  // Reminder del lunedì della stessa settimana = "Approva questa settimana". Lo cerco per data
+  // (non per id, che in CSM dipende dal fuso del browser).
+  const monday = new Date(y, m - 1, d - ((dt.getDay() + 6) % 7));
+  const rem = STATE.recurringPosts.find(x => {
+    if (x.recurringType !== 'reminder') return false;
+    const pd = parsePostDate(x);
+    return pd && pd.year === monday.getFullYear() && pd.month === monday.getMonth() && pd.day === monday.getDate();
+  });
+  const weekApproved = !!rem && (rem.status === 'approvato' || rem.status === 'published');
+
+  const entry = (STATE.storiesLog.stories || {})[p.storyDate];
+  const okBoth = entry && entry.pranzo && entry.pranzo.ok && entry.cena && entry.cena.ok;
+  let status;
+  if (okBoth)                              status = 'published';
+  else if (entry && (entry.pranzo || entry.cena)) status = 'error';
+  else if (dt < today0)                    status = STATE.storiesLogLoaded ? 'missed' : 'unknown';
+  else if (weekApproved)                   status = 'scheduled';
+  else                                     status = 'waiting';
+
+  // L'anteprima usa i JPG che sono ORA su GitHub: hanno gli stessi nomi ogni settimana, quindi valgono
+  // solo per la settimana appena approvata (da oggi in avanti, non oltre 7 giorni).
+  const daysAhead = Math.round((dt - today0) / 86400000);
+  const previewable = weekApproved && daysAhead >= 0 && daysAhead <= 7;
+  const urlFor = (num, srv) => STORY_IMG_BASE + encodeURIComponent(`${num}-${dayInfo.name}-${srv}.jpg`);
+  return { status, dt, entry, weekApproved, previewable,
+           urls: { pranzo: urlFor(dayInfo.pranzo, 'pranzo'), cena: urlFor(dayInfo.cena, 'cena') } };
+}
+
+function storyPill(si) {
+  switch (si.status) {
+    case 'published': return { cls: 'pill-published', label: 'Pubblicate ✓' };
+    case 'error':     return { cls: 'pill-error',     label: 'Errore ⚠️' };
+    case 'missed':    return { cls: 'pill-missed',    label: 'Non pubblicate' };
+    case 'scheduled': return { cls: 'pill-scheduled', label: 'In programma 9:30' };
+    case 'waiting':   return { cls: 'pill-draft',     label: 'In attesa di approvazione' };
+    default:          return { cls: 'pill-draft',     label: '—' };
+  }
+}
+
+// Piccola icona di stato accanto al chip del calendario (story e reminder del lunedì).
+function chipMark(p) {
+  if (p.recurringType === 'story') {
+    return { published: ' ✅', error: ' ⚠️', scheduled: ' 🕘', missed: ' ✖' }[storyInfo(p).status] || '';
+  }
+  if (p.recurringType === 'reminder') {
+    return { published: ' ✅', approvato: ' 🕘' }[p.status] || '';
+  }
+  return '';
+}
+
+// Legge il registro delle story dalla cartella Dropbox (sola lettura). Non mostra errori: se manca
+// (nessuna story ancora pubblicata) o Dropbox non è raggiungibile, il calendario resta com'è.
+async function loadStoriesLog() {
+  if (!STATE.dropboxRefreshToken || !navigator.onLine) return;
+  try {
+    const token = await getDropboxAccessToken();
+    if (!token) return;
+    const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_STORIES_LOG_PATH }) }
+    });
+    if (res.status === 409) { STATE.storiesLog = {}; STATE.storiesLogLoaded = true; return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    STATE.storiesLog = await res.json();
+    STATE.storiesLogLoaded = true;
+  } catch (err) {
+    console.warn('Registro story non caricato:', err.message);
+  }
+}
+
+function openStoryDetail(p) {
+  const si = storyInfo(p);
+  const pill = storyPill(si);
+  const dayLabel = `${WEEKDAY_NAMES_IT[(si.dt.getDay() + 6) % 7]} ${si.dt.getDate()} ${MONTH_NAMES_IT[si.dt.getMonth()]}`;
+  const hhmm = iso => new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+
+  let msg;
+  switch (si.status) {
+    case 'published':
+      msg = `Pubblicate su Instagram alle ${hhmm(si.entry.pranzo.at)} (pranzo) e alle ${hhmm(si.entry.cena.at)} (cena).`; break;
+    case 'error': {
+      const parts = ['pranzo', 'cena'].map(k => {
+        const r = si.entry[k];
+        return !r ? `${k}: non pubblicata` : r.ok ? `${k}: ✅ pubblicata alle ${hhmm(r.at)}` : `${k}: ❌ ${_escHtml(r.error)}`;
+      });
+      msg = `Qualcosa non è andato: <br>${parts.join('<br>')}<br><br>Controlla il log della GitHub Action "Pubblica stories giornaliere".`; break;
+    }
+    case 'missed':
+      msg = 'Quel giorno non risulta nessuna story pubblicata (settimana non approvata, oppure l\'Action non è partita).'; break;
+    case 'scheduled':
+      msg = 'Settimana approvata: le 2 story (pranzo e cena) partono da sole alle 9:30, con i menù del giorno presi dal sito.'; break;
+    case 'waiting':
+      msg = 'In attesa: la settimana non è ancora approvata, quindi <b>non partirà nessuna story</b>. Apri il reminder del lunedì e clicca «✅ Approva questa settimana».'; break;
+    default:
+      msg = 'Stato non disponibile: connetti Dropbox in Impostazioni e ricarica la pagina.';
+  }
+
+  const preview = si.previewable ? `
+    <div class="form-group" style="margin-bottom:12px">
+      <label>👀 Anteprima — le due immagini che usciranno come story</label>
+      <div class="story-preview-grid">
+        <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px">🍽️ Story pranzo</div>
+          <img src="${si.urls.pranzo}" alt="Menù pranzo">
+        </div>
+        <div style="background:var(--surface2); border-radius:var(--radius-lg); padding:10px">
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px">🌙 Story cena</div>
+          <img src="${si.urls.cena}" alt="Menù cena">
+        </div>
+      </div>
+      <div style="margin-top:8px; font-size:12px; color:var(--text2); line-height:1.5">Sono i JPG che ci sono adesso nella cartella del sito su GitHub (gli stessi del menù online). Se un servizio è chiuso o al completo, vedi l'immagine generica «AL COMPLETO».</div>
+    </div>` : `
+    <div style="margin-bottom:12px; background:var(--surface2); border-radius:var(--radius); padding:10px 12px; font-size:12px; color:var(--text2); line-height:1.5">
+      Anteprima non disponibile: compare dopo l'approvazione della settimana e solo per i giorni da oggi in avanti (i file del menù vengono sostituiti ogni settimana, quelli dei giorni passati non ci sono più).
+    </div>`;
+
+  openModal(`📲 Story — ${dayLabel}`, `
+    <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <span class="tag tag-story">📲 Story del giorno</span>
+      <span class="plat plat-ig">Instagram</span>
+      <span class="status-pill ${pill.cls}">${pill.label}</span>
+    </div>
+    <div style="margin-bottom:14px; font-size:13px; color:var(--text2); line-height:1.6">${msg}</div>
+    ${preview}
+    <div style="font-size:12px; color:var(--text3)">Le story non hanno testo né grafica: escono i JPG del menù così come sono. Non si modificano da qui.</div>
+  `);
+}
+
 function renderPostRow(p) {
   const statusMap = {
     draft:     { cls:'pill-draft',     label:'Bozza' },
@@ -1594,7 +1798,8 @@ function renderPostRow(p) {
     scheduled: { cls:'pill-scheduled', label:'Schedulato' },
     published: { cls:'pill-published', label:'Pubblicato' },
   };
-  const s = statusMap[p.status] || statusMap.draft;
+  const storyI = p.recurringType === 'story' ? storyInfo(p) : null;
+  const s = storyI ? storyPill(storyI) : (statusMap[p.status] || statusMap.draft);
   const plats = [
     p.platforms.includes('fb') ? '<span class="plat plat-fb">Facebook</span>' : '',
     p.platforms.includes('ig') ? '<span class="plat plat-ig">Instagram</span>' : ''
@@ -1602,7 +1807,11 @@ function renderPostRow(p) {
   const recurringTag = p.recurringType
     ? `<span class="tag ${RECURRING_TYPES[p.recurringType].cls}">${RECURRING_TYPES[p.recurringType].icon} ${RECURRING_TYPES[p.recurringType].label}</span>`
     : '';
-  const thumb = p.photoFile
+  const thumb = storyI
+    ? (storyI.previewable
+        ? `<img class="post-thumb-sm" src="${storyI.urls.pranzo}" alt="">`
+        : `<div class="post-thumb-sm post-thumb-empty">—</div>`)
+    : p.photoFile
     ? `<img class="post-thumb-sm" data-photo-path="${p.photoFile.replace(/"/g, '&quot;')}" src="" alt="">`
     : `<div class="post-thumb-sm post-thumb-empty">—</div>`;
   return `
@@ -1915,6 +2124,7 @@ function openPostDetail(id) {
   const found = findPostById(id);
   if (!found) return;
   const p = found.post;
+  if (p.recurringType === 'story') return openStoryDetail(p);
 
   const statusOptions = ['draft','ready','approvato','scheduled','published']
     .map(s => `<option value="${s}" ${p.status===s?'selected':''}>${{draft:'Bozza',ready:'Pronto',approvato:'Approvato',scheduled:'Schedulato',published:'Pubblicato'}[s]}</option>`)
@@ -2026,6 +2236,7 @@ async function approvaSettimana(id) {
     showToast('⚠️ Grafica IG non salvata (' + err.message + ') — al momento del post userò la foto semplice anche su IG, a meno che tu non la generi a mano prima di lunedì');
   }
   p.status = 'approvato';
+  showView(STATE.currentView); // aggiorna subito il calendario: compaiono le story della settimana "In programma 9:30"
   showToast('✅ Settimana approvata! Tutto pronto per lunedì.');
   autoSync();
 }
@@ -2801,6 +3012,7 @@ async function loadFromDropbox() {
     const cleaned = removeLegacyPlaceholders();
     saveToStorage();
     if (cleaned) await saveToDropbox();
+    await loadStoriesLog();
     showView(STATE.currentView);
     showToast(`✅ Caricati ${STATE.posts.length} post da Dropbox!`);
     return true;
