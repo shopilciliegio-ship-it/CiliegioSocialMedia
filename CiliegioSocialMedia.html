@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.23.1',
+    version: '2.24.0',
     date: '2026-09-21',
     current: true,
+    description: 'Story del giorno: sotto la cartolina del menu compare la pillola Prenota un tavolo, link in bio (bozza B scelta da Luca). Le story da API non possono avere lo sticker link, quindi la scritta rimanda al link Prenota un tavolo che sta nella bio del profilo. La cartolina si riduce di circa il 10% per far posto alla pillola. Cambiata sia la grafica composta dalla GitHub Action (story-grafica.js) sia l anteprima nel calendario, che restano identiche.'
+  },
+  {
+    version: '2.23.1',
+    date: '2026-09-21',
+    current: false,
     description: 'Il link Prenota il tavolo dei post Facebook ora e ilciliegio.com/prenota (pagina del sito con redirect a Google Prenotazioni) al posto del lungo indirizzo Google. Si aggiorna anche nei testi gia salvati e non ancora pubblicati. Nella bio Instagram conviene mettere lo stesso indirizzo breve.'
   },
   {
@@ -1892,6 +1898,8 @@ async function loadStoriesLog() {
 // usa davvero alle 9:30), rifatta con il Canvas 2D del browser. Se cambi qualcosa lì, cambia anche qui.
 const STORY_W = 1080, STORY_H = 1920, STORY_TITOLO = 'ICCHESSIMANGIAOGGI?';
 const STORY_SAFE_TOP = 250, STORY_SAFE_BOTTOM = 300;
+// Pillola "Prenota un tavolo · link in bio" sotto la cartolina (vedi PRENOTA_TESTO in story-grafica.js).
+const STORY_PRENOTA_TESTO = 'PRENOTA UN TAVOLO · LINK IN BIO', STORY_PRENOTA_SPAZIO = 120;
 
 function _storyRoundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -1926,7 +1934,7 @@ async function disegnaStoryCanvas(menu, logo, colore) {
   ctx.fillStyle = '#FFF3DC'; ctx.fillText(STORY_TITOLO, pad, ty);
 
   // Cartolina del menù
-  const top = 480, bottom = STORY_H - STORY_SAFE_BOTTOM;
+  const top = 480, bottom = STORY_H - STORY_SAFE_BOTTOM - STORY_PRENOTA_SPAZIO;
   const ch = bottom - top, cw = ch * menu.width / menu.height, cx0 = (STORY_W - cw) / 2;
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
@@ -1953,6 +1961,19 @@ async function disegnaStoryCanvas(menu, logo, colore) {
     ctx.restore();
     ctx.beginPath(); ctx.arc(bx, by, br - 3, 0, Math.PI * 2);
     ctx.lineWidth = 6; ctx.strokeStyle = '#FFF3DC'; ctx.stroke();
+  }
+
+  // Pillola crema con il testo nel colore della settimana, centrata sotto la cartolina
+  {
+    const ph = 74, py = bottom + 34, pf = 38;
+    ctx.font = `${pf}px "Titan One", sans-serif`;
+    const pw = ctx.measureText(STORY_PRENOTA_TESTO).width + ph * 0.9, px = (STORY_W - pw) / 2;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    _storyRoundRect(ctx, px, py, pw, ph, ph / 2); ctx.fillStyle = '#FFF3DC'; ctx.fill();
+    ctx.restore();
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = colore;
+    ctx.fillText(STORY_PRENOTA_TESTO, px + ph * 0.45, py + ph / 2 + pf * 0.04);
   }
   return canvas;
 }

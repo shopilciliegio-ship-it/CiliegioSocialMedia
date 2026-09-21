@@ -20,6 +20,11 @@ const TITOLO = 'ICCHESSIMANGIAOGGI?';
 const LOGO_ICON_CUT = 0.64; // frazione superiore del file logo occupata dal solo stemma dorato
 const SAFE_TOP = 250;       // IG copre in alto nome profilo/chiudi
 const SAFE_BOTTOM = 300;    // ... e in basso la barra "invia messaggio"
+// Pillola "Prenota un tavolo: link in bio" sotto la cartolina (le story da API non possono avere lo sticker link:
+// l'unico modo di rimandare alle prenotazioni è scriverlo sull'immagine; il link vero sta nella bio del profilo).
+// Bozza "B" scelta da Luca il 21/9/2026. Solo Titan One e forme disegnate: niente emoji (sul runner Linux non ci sono font emoji).
+const PRENOTA_TESTO = 'PRENOTA UN TAVOLO · LINK IN BIO';
+const PRENOTA_SPAZIO = 120; // altezza tolta alla cartolina per far posto alla pillola
 
 // Stessa palette e stessa rotazione della grafica IG del lunedì (IG_GRAPHIC_COLORS in CSM).
 const COLORS = ['#E8552F', '#1D9E75', '#BA7517', '#993C1D', '#185FA5', '#C9302C', '#534AB7', '#0F6E56', '#D68910', '#993556'];
@@ -92,8 +97,23 @@ function drawCard(ctx, menu, top, bottom) {
   return { x, y: top, w, h };
 }
 
+// Pillola crema con il testo nel colore della settimana, centrata sotto la cartolina (dentro la zona sicura in basso).
+function drawPrenota(ctx, cardBottom, color) {
+  const h = 74, y = cardBottom + 34, fontPx = 38;
+  ctx.font = `${fontPx}px "Titan One"`;
+  const w = ctx.measureText(PRENOTA_TESTO).width + h * 0.9;
+  const x = (W - w) / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  roundRect(ctx, x, y, w, h, h / 2); ctx.fillStyle = '#FFF3DC'; ctx.fill();
+  ctx.restore();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = color;
+  ctx.fillText(PRENOTA_TESTO, x + h * 0.45, y + h / 2 + fontPx * 0.04);
+}
+
 // Layout unico (variante "A" scelta da Luca): scritta a tutta larghezza sotto la zona coperta da IG,
-// cartolina del menù al centro, badge come sigillo sull'angolo in alto a destra della cartolina.
+// cartolina del menù al centro, badge come sigillo sull'angolo in alto a destra della cartolina,
+// pillola "Prenota un tavolo · link in bio" sotto la cartolina.
 // ATTENZIONE: la stessa geometria è replicata in CiliegioSocialMedia.html (disegnaStoryCanvas, usata per
 // l'anteprima nel calendario): se cambi qualcosa qui, cambia anche là.
 async function composeStory({ menuBuf, logoBuf, color }) {
@@ -109,8 +129,9 @@ async function composeStory({ menuBuf, logoBuf, color }) {
   const pad = 64;
   const fs = fitTitle(ctx, W - pad * 2);
   drawTitle(ctx, pad, SAFE_TOP + 50 + fs * 0.72, fs);
-  const card = drawCard(ctx, menu, 480, H - SAFE_BOTTOM);
+  const card = drawCard(ctx, menu, 480, H - SAFE_BOTTOM - PRENOTA_SPAZIO);
   drawBadge(ctx, logo, card.x + card.w - 26, card.y + 24, 66, color);
+  drawPrenota(ctx, card.y + card.h, color);
   return canvas.toBuffer('image/jpeg', 92);
 }
 
