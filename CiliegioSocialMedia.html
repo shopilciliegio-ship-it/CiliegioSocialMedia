@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.23.0',
+    version: '2.23.1',
     date: '2026-09-21',
     current: true,
+    description: 'Il link Prenota il tavolo dei post Facebook ora e ilciliegio.com/prenota (pagina del sito con redirect a Google Prenotazioni) al posto del lungo indirizzo Google. Si aggiorna anche nei testi gia salvati e non ancora pubblicati. Nella bio Instagram conviene mettere lo stesso indirizzo breve.'
+  },
+  {
+    version: '2.23.0',
+    date: '2026-09-21',
+    current: false,
     description: 'Tre novita. 1) Il calendario ora legge post-log.json scritto dalla GitHub Action: il reminder gia uscito mostra il segno verde (prima restava con l orologio perche CSM non rileggeva lo stato), un reminder uscito solo su una piattaforma mostra un avviso, e nel dettaglio si vede lo stato di Facebook e Instagram. 2) Nel dettaglio del reminder, riquadro Riscrivi i testi con AI: si scrivono tema e tono, la bozza compila i due campi di testo con la struttura fissa (apertura, link, hashtag) messa dal codice; niente viene salvato o pubblicato senza Salva e Approva. Regole ferree nel prompt: nessun allevamento o produzione propria di salumi, carne o formaggi, nessuna spedizione se non richiesta, nessun fatto inventato. La chiave API resta solo su questo browser. 3) Controllo automatico dei testi: sotto i due campi compare un avviso se il testo parla di allevamento, di nostri salumi o promette spedizione di salumi, carne o formaggi.'
   },
   {
@@ -1213,9 +1219,11 @@ function igLinkInBio(text) {
 // Link fissi dei post del lunedì. Facebook: nel testo (cliccabili). Instagram: nel link in bio del profilo,
 // impostato a mano con tre link in quest'ordine → "Prenota un tavolo" (LINK_PRENOTA), "Menù della settimana"
 // (ilciliegio.com/it/ristorante), "Shop online" (LINK_SHOP).
-// Quando il sito avrà la pagina ilciliegio.com/prenota basta metterla in LINK_PRENOTA: fbBloccoLink()
-// riscrive il blocco anche nei testi già salvati (non ancora pubblicati).
-const LINK_PRENOTA = 'https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?hl=it-IT';
+// LINK_PRENOTA è una pagina del sito con redirect 301 a Google Prenotazioni
+// (https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?hl=it-IT): se un giorno cambia la destinazione si
+// cambia lì, non nei post. Cambiando questo valore fbBloccoLink() riscrive il blocco anche nei testi già
+// salvati (non ancora pubblicati).
+const LINK_PRENOTA = 'https://www.ilciliegio.com/prenota';
 const LINK_SHOP    = 'https://wineclub.sienawine.it/';
 const WHATSAPP_RISTORANTE = 'wa.me/393291767348';
 
