@@ -16,6 +16,10 @@
 // Segreti (Worker → Settings → Variables and Secrets, tipo "Secret"):
 //   GITHUB_TOKEN  token fine-grained GitHub, solo repo CiliegioSocialMedia, permesso Actions: Read and write
 //   TEST_KEY      una stringa a caso, serve solo per la pagina di prova /test/<TEST_KEY>/<lunedi|stories>
+// Pagina /status: dice se il Worker è attivo e se i due segreti gli sono arrivati (mai i valori).
+
+// Un secret incollato nel pannello può portarsi dietro spazi o a-capo: qui vengono ignorati.
+const segreto = v => (typeof v === 'string' ? v.trim() : '');
 
 const OWNER = 'shopilciliegio-ship-it';
 const REPO  = 'CiliegioSocialMedia';
@@ -44,7 +48,7 @@ async function dispatch(env, job, { dry = false, force = false } = {}) {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+        'Authorization': `Bearer ${segreto(env.GITHUB_TOKEN)}`,
         'Accept': 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'ciliegio-timer',
@@ -76,7 +80,16 @@ export default {
   // logga cosa farebbe, non pubblica nulla). Con una chiave sbagliata risponde 404.
   async fetch(request, env) {
     const [, sezione, chiave, job] = new URL(request.url).pathname.split('/');
-    if (sezione !== 'test' || !env.TEST_KEY || chiave !== env.TEST_KEY || !JOBS[job]) return new Response('Not found', { status: 404 });
+    if (sezione === 'status') {
+      const r = romeNow(new Date());
+      return new Response([
+        'Worker attivo.',
+        `GITHUB_TOKEN: ${segreto(env.GITHUB_TOKEN) ? 'impostato' : 'MANCANTE'}`,
+        `TEST_KEY: ${segreto(env.TEST_KEY) ? 'impostata' : 'MANCANTE'}`,
+        `Ora a Roma: ${r.weekday} ${r.hour}:${String(r.minute).padStart(2, '0')}`
+      ].join('\n') + '\n');
+    }
+    if (sezione !== 'test' || !segreto(env.TEST_KEY) || chiave !== segreto(env.TEST_KEY) || !JOBS[job]) return new Response('Not found', { status: 404 });
     try {
       return new Response(await dispatch(env, job, { dry: true, force: true }) + '\n');
     } catch (err) {
