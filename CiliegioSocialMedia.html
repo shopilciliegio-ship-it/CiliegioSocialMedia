@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.21.2',
+    version: '2.22.0',
     date: '2026-09-21',
     current: true,
+    description: 'Link fissi nei reminder del lunedi. Facebook: in fondo al testo un blocco cliccabile con Prenota il tavolo (Google Prenotazioni), Shop online (wineclub.sienawine.it) e WhatsApp del ristorante, al posto della vecchia riga Prenota su WhatsApp oppure sul sito; le frasi di invito di ogni post restano. Instagram: la CTA finale rimanda al link in bio, che va impostato a mano con tre link (Prenota un tavolo, Menu della settimana, Shop online). I link stanno in LINK_PRENOTA e LINK_SHOP nel codice: cambiandoli si aggiornano anche i testi salvati non ancora pubblicati.'
+  },
+  {
+    version: '2.21.2',
+    date: '2026-09-21',
+    current: false,
     description: 'Reminder Instagram: il rimando "I menù della settimana sono online: link in bio 👆" ora è sempre presente. Gli 8 template il cui testo IG parla di altro (cesti regalo, botti, formaggi…) ricevono la riga come paragrafo a sé, prima della CTA; negli altri 47 resta nella frase sui menù.'
   },
   {
@@ -1180,7 +1186,8 @@ function igLinkInBio(text) {
   const haMenuInBio = s => /menù[^\n]*link in bio/i.test(s);
   let t = text
     .replace(/\s+su\s+https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, ': link in bio 👆') // "sono online su <URL>"
-    .replace(/https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, 'link in bio 👆');            // URL da solo
+    .replace(/https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, 'link in bio 👆')            // URL da solo
+    .replace(/👉 www\.ilciliegio\.com/g, '👉 link in bio');                                            // CTA: prenota / ordina / info
   // Frase sui menù già presente ma senza rimando: lo aggiunge in coda alla frase.
   if (!haMenuInBio(t)) {
     t = t.replace(/(menù della settimana[^.\n]*?sono online)(?=[.\s])/i, '$1: link in bio 👆');
@@ -1194,6 +1201,34 @@ function igLinkInBio(text) {
     t = pos >= 0 ? t.slice(0, pos) + RIGA + '\n\n' + t.slice(pos) : t.trimEnd() + '\n\n' + RIGA;
   }
   return t;
+}
+
+// Link fissi dei post del lunedì. Facebook: nel testo (cliccabili). Instagram: nel link in bio del profilo,
+// impostato a mano con tre link in quest'ordine → "Prenota un tavolo" (LINK_PRENOTA), "Menù della settimana"
+// (ilciliegio.com/it/ristorante), "Shop online" (LINK_SHOP).
+// Quando il sito avrà la pagina ilciliegio.com/prenota basta metterla in LINK_PRENOTA: fbBloccoLink()
+// riscrive il blocco anche nei testi già salvati (non ancora pubblicati).
+const LINK_PRENOTA = 'https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?hl=it-IT';
+const LINK_SHOP    = 'https://wineclub.sienawine.it/';
+const WHATSAPP_RISTORANTE = 'wa.me/393291767348';
+
+// Blocco di link in fondo al testo Facebook, prima degli hashtag. Sostituisce la vecchia riga fissa
+// "Prenota su WhatsApp → … oppure sul sito, cliccando su "Prenota" 👉 www.ilciliegio.com" (la frase d'invito
+// sopra, diversa in ogni post, resta). Idempotente: se il blocco c'è già lo riscrive con i link attuali.
+function fbBloccoLink(text) {
+  if (!text) return text;
+  const blocco = [
+    `📅 Prenota il tavolo: ${LINK_PRENOTA}`,
+    `🍷 Shop online: ${LINK_SHOP}`,
+    `💬 Per parlare con il ristorante, WhatsApp → ${WHATSAPP_RISTORANTE}`
+  ].join('\n');
+  const giaBlocco = /^📅 Prenota il tavolo:.*\n🍷 Shop online:.*\n💬 Per parlare con il ristorante.*$/m;
+  if (giaBlocco.test(text)) return text.replace(giaBlocco, () => blocco);
+  const vecchiaCta = /^Prenota su WhatsApp → wa\.me\/393291767348 oppure sul sito, cliccando su "Prenota" 👉 www\.ilciliegio\.com$/m;
+  if (vecchiaCta.test(text)) return text.replace(vecchiaCta, () => blocco);
+  // CTA modificata a mano: il blocco va comunque prima degli hashtag (o in coda).
+  const tag = text.search(/^#/m);
+  return tag >= 0 ? text.slice(0, tag) + blocco + '\n\n' + text.slice(tag) : text.trimEnd() + '\n\n' + blocco;
 }
 
 function pickRotazioneFoto(dateStr) {
@@ -1275,7 +1310,7 @@ function makeRecurringPost(type, date) {
       // pronto per la revisione in calendario appena generato.
       const rot = pickRotazioneFoto(dateStr);
       if (rot) {
-        fbText = rot.fbText; igText = igLinkInBio(rot.igText);
+        fbText = fbBloccoLink(rot.fbText); igText = igLinkInBio(rot.igText);
         photoFile = `${DROPBOX_PHOTO_FOLDER}/${rot.file}`.toLowerCase();
         photoName = rot.file;
         status = 'ready';
@@ -1435,7 +1470,7 @@ function applyRecurringOverrides(source) {
   STATE.recurringPosts.forEach(p => {
     const o = source[p.id];
     if (!o) return;
-    if (o.fbText)                         p.fbText    = o.fbText;
+    if (o.fbText)                         p.fbText    = (p.recurringType === 'reminder' && o.status !== 'published') ? fbBloccoLink(o.fbText) : o.fbText;
     if (o.igText)                         p.igText    = (p.recurringType === 'reminder' && o.status !== 'published') ? igLinkInBio(o.igText) : o.igText;
     if (o.photoHint)                      p.photoHint = o.photoHint;
     if (o.photoFile)                      p.photoFile = o.photoFile;
