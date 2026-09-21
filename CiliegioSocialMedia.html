@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.22.0',
+    version: '2.23.0',
     date: '2026-09-21',
     current: true,
+    description: 'Tre novita. 1) Il calendario ora legge post-log.json scritto dalla GitHub Action: il reminder gia uscito mostra il segno verde (prima restava con l orologio perche CSM non rileggeva lo stato), un reminder uscito solo su una piattaforma mostra un avviso, e nel dettaglio si vede lo stato di Facebook e Instagram. 2) Nel dettaglio del reminder, riquadro Riscrivi i testi con AI: si scrivono tema e tono, la bozza compila i due campi di testo con la struttura fissa (apertura, link, hashtag) messa dal codice; niente viene salvato o pubblicato senza Salva e Approva. Regole ferree nel prompt: nessun allevamento o produzione propria di salumi, carne o formaggi, nessuna spedizione se non richiesta, nessun fatto inventato. La chiave API resta solo su questo browser. 3) Controllo automatico dei testi: sotto i due campi compare un avviso se il testo parla di allevamento, di nostri salumi o promette spedizione di salumi, carne o formaggi.'
+  },
+  {
+    version: '2.22.0',
+    date: '2026-09-21',
+    current: false,
     description: 'Link fissi nei reminder del lunedi. Facebook: in fondo al testo un blocco cliccabile con Prenota il tavolo (Google Prenotazioni), Shop online (wineclub.sienawine.it) e WhatsApp del ristorante, al posto della vecchia riga Prenota su WhatsApp oppure sul sito; le frasi di invito di ogni post restano. Instagram: la CTA finale rimanda al link in bio, che va impostato a mano con tre link (Prenota un tavolo, Menu della settimana, Shop online). I link stanno in LINK_PRENOTA e LINK_SHOP nel codice: cambiandoli si aggiornano anche i testi salvati non ancora pubblicati.'
   },
   {
@@ -866,6 +872,7 @@ const DROPBOX_GRAPHIC_FOLDER = '/IlCiliegio/SocialMedia/GraficaGenerata';
 // Registro delle story pubblicate: lo scrive SOLO la GitHub Action pubblica-stories.js, CSM lo legge
 // in sola lettura per mostrare "Pubblicate" sul giorno del calendario.
 const DROPBOX_STORIES_LOG_PATH = '/IlCiliegio/SocialMedia/stories-log.json';
+const DROPBOX_POST_LOG_PATH    = '/IlCiliegio/SocialMedia/post-log.json';
 // Le story usano i JPG del menù già pubblici su GitHub (stessi file che legge pubblica-stories.js:
 // numerazione canonica 02–15 e nome giorno con accento). Indice = Date.getDay() (0=domenica).
 const STORY_IMG_BASE = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito/';
@@ -1212,16 +1219,21 @@ const LINK_PRENOTA = 'https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?h
 const LINK_SHOP    = 'https://wineclub.sienawine.it/';
 const WHATSAPP_RISTORANTE = 'wa.me/393291767348';
 
+// Le tre righe di link del blocco Facebook (usate anche dalla riscrittura AI).
+function fbBloccoTesto() {
+  return [
+    `📅 Prenota il tavolo: ${LINK_PRENOTA}`,
+    `🍷 Shop online: ${LINK_SHOP}`,
+    `💬 Per parlare con il ristorante, WhatsApp → ${WHATSAPP_RISTORANTE}`
+  ].join('\n');
+}
+
 // Blocco di link in fondo al testo Facebook, prima degli hashtag. Sostituisce la vecchia riga fissa
 // "Prenota su WhatsApp → … oppure sul sito, cliccando su "Prenota" 👉 www.ilciliegio.com" (la frase d'invito
 // sopra, diversa in ogni post, resta). Idempotente: se il blocco c'è già lo riscrive con i link attuali.
 function fbBloccoLink(text) {
   if (!text) return text;
-  const blocco = [
-    `📅 Prenota il tavolo: ${LINK_PRENOTA}`,
-    `🍷 Shop online: ${LINK_SHOP}`,
-    `💬 Per parlare con il ristorante, WhatsApp → ${WHATSAPP_RISTORANTE}`
-  ].join('\n');
+  const blocco = fbBloccoTesto();
   const giaBlocco = /^📅 Prenota il tavolo:.*\n🍷 Shop online:.*\n💬 Per parlare con il ristorante.*$/m;
   if (giaBlocco.test(text)) return text.replace(giaBlocco, () => blocco);
   const vecchiaCta = /^Prenota su WhatsApp → wa\.me\/393291767348 oppure sul sito, cliccando su "Prenota" 👉 www\.ilciliegio\.com$/m;
@@ -1414,6 +1426,8 @@ const STATE = {
   recurringPosts: generateRecurringPosts(),
   storiesLog: {},          // { stories: { 'YYYY-MM-DD': { pranzo:{ok,id,at}, cena:{...} } } } — da stories-log.json (sola lettura)
   storiesLogLoaded: false,
+  postLog: {},             // { posts: { 'r_YYYY-MM-DD_reminder': { fb:{ok,id,at,error}, ig:{...} } } } — da post-log.json (sola lettura)
+  postLogLoaded: false,
   settings: {
     companyName: 'Società Agricola Il Ciliegio',
     location: 'Monteriggioni, Siena – Chianti',
@@ -1492,6 +1506,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   updateDropboxStatus();
   // Registro story (sola lettura): in background, poi ridisegna il calendario se è ancora la vista aperta.
   loadStoriesLog().then(() => { if (STATE.storiesLogLoaded && STATE.currentView === 'calendar') showView('calendar'); });
+  loadPostLog().then(() => { if (STATE.postLogLoaded) { applyPostLog(); if (STATE.currentView === 'calendar') showView('calendar'); } });
 });
 
 function loadFromStorage() {
@@ -1790,9 +1805,59 @@ function chipMark(p) {
     return { published: ' ✅', error: ' ⚠️', scheduled: ' 🕘', missed: ' ✖' }[storyInfo(p).status] || '';
   }
   if (p.recurringType === 'reminder') {
+    if (p.pubParziale) return ' ⚠️';
     return { published: ' ✅', approvato: ' 🕘' }[p.status] || '';
   }
   return '';
+}
+
+// Registro dei post del lunedì (sola lettura): esito per piattaforma scritto dalla GitHub Action in post-log.json.
+// Serve a far vedere nel calendario che il reminder è uscito davvero (✅) o solo in parte (⚠️): CSM non lo
+// scopriva da solo, perché tiene il suo stato in localStorage e non rilegge piano.json all'avvio.
+async function loadPostLog() {
+  if (!STATE.dropboxRefreshToken || !navigator.onLine) return;
+  try {
+    const token = await getDropboxAccessToken();
+    if (!token) return;
+    const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_POST_LOG_PATH }) }
+    });
+    if (res.status === 409) { STATE.postLog = {}; STATE.postLogLoaded = true; return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    STATE.postLog = await res.json();
+    STATE.postLogLoaded = true;
+  } catch (err) {
+    console.warn('Registro post non caricato:', err.message);
+  }
+}
+
+// Applica il registro ai reminder: FB e IG usciti → "published"; solo uno dei due (o un errore) → pubParziale
+// (mai salvato, si ricalcola a ogni avvio). Solo in memoria: il salvataggio su Dropbox lo fa la prossima modifica.
+function applyPostLog() {
+  const posts = (STATE.postLog && STATE.postLog.posts) || {};
+  STATE.recurringPosts.forEach(p => {
+    if (p.recurringType !== 'reminder') return;
+    p.pubParziale = false;
+    const e = posts[p.id];
+    if (!e) return;
+    const fbOk = !!(e.fb && e.fb.ok), igOk = !!(e.ig && e.ig.ok);
+    if (fbOk && igOk) p.status = 'published';
+    else if (e.fb || e.ig) p.pubParziale = true;
+  });
+}
+
+// Riga di stato per piattaforma da mostrare nel dettaglio del reminder (vuota se non c'è nulla di registrato).
+function pubStatoHTML(p) {
+  const e = ((STATE.postLog && STATE.postLog.posts) || {})[p.id];
+  if (!e) return '';
+  const riga = (nome, x) => {
+    if (!x) return `${nome}: —`;
+    const quando = x.at ? new Date(x.at).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    return x.ok ? `${nome}: ✅ pubblicato ${quando}` : `${nome}: ⚠️ non riuscito — ${(x.error || 'errore').slice(0, 120)}`;
+  };
+  return `<div style="margin-bottom:12px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.6">
+    <strong>Pubblicazione</strong><br>${riga('Facebook', e.fb)}<br>${riga('Instagram', e.ig)}</div>`;
 }
 
 // Legge il registro delle story dalla cartella Dropbox (sola lettura). Non mostra errori: se manca
@@ -2124,12 +2189,12 @@ async function callClaude(prompt, maxTokens = 1500) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': STATE.apiKey,
+      'x-api-key': getAnthropicKey(),
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }]
     })
@@ -2314,6 +2379,7 @@ function openPostDetail(id) {
 
   openModal(p.title, `
     ${recurringBadge}
+    ${p.recurringType === 'reminder' ? pubStatoHTML(p) : ''}
     <div class="form-group" style="margin-bottom:16px">
       <label>📸 Foto abbinata</label>
       ${p.photoFile ? `
@@ -2358,13 +2424,16 @@ function openPostDetail(id) {
       <label>Stato</label>
       <select id="pd-status">${statusOptions}</select>
     </div>
+    ${p.recurringType === 'reminder' ? renderAiBox(id) : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Testo Facebook</label>
-      <textarea id="pd-fb" style="min-height:100px">${p.fbText || ''}</textarea>
+      <textarea id="pd-fb" style="min-height:160px" oninput="aggiornaAvvisiTesti()">${p.fbText || ''}</textarea>
+      <div id="pd-warn-fb"></div>
     </div>
     <div class="form-group" style="margin-bottom:16px">
       <label>Testo Instagram</label>
-      <textarea id="pd-ig" style="min-height:100px">${p.igText || ''}</textarea>
+      <textarea id="pd-ig" style="min-height:160px" oninput="aggiornaAvvisiTesti()">${p.igText || ''}</textarea>
+      <div id="pd-warn-ig"></div>
     </div>
     ${p.recurringType === 'reminder' ? `
     <div style="margin-bottom:16px">
@@ -2376,11 +2445,183 @@ function openPostDetail(id) {
       <button class="btn danger" onclick="deletePost('${id}')">${deleteLabel}</button>
     </div>
   `);
+  aggiornaAvvisiTesti();
   if (p.photoFile && STATE.dropboxRefreshToken) {
     loadPhotoThumbs([{ path_lower: p.photoFile }], 'modal-body', 'w960h640')
       .then(errors => { if (errors.length) showToast(`⚠️ Foto non trovata su Dropbox: ${errors[0].error}`); });
     generaGraficaIG(id, true);
   }
+}
+
+/* ═══════════════════════════════════════════════
+   RISCRIVI CON AI — solo nel dettaglio di un reminder (finestra di anteprima)
+   Luca scrive tema e tono, l'AI compila i due campi di testo (FB e IG) come BOZZA: niente viene salvato o
+   pubblicato finché non si preme "Salva modifiche" e poi "Approva questa settimana". Struttura fissa
+   (apertura "Ovvia mimmi!", link menù, blocco link, hashtag) la mette il codice, non il modello.
+   La chiave API sta solo nel localStorage di questo browser: NON va in piano.json né su Dropbox.
+═══════════════════════════════════════════════ */
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
+
+function getAnthropicKey() {
+  try { return localStorage.getItem('ciliegio_anthropic_key') || ''; } catch (e) { return ''; }
+}
+
+function renderAiKeyRow() {
+  return getAnthropicKey()
+    ? `<span style="font-size:12px; color:var(--text2)">🔑 Chiave API salvata su questo browser · <a href="#" onclick="cambiaChiaveAI(); return false;">cambia</a></span>`
+    : `<div style="display:flex; gap:8px; align-items:center">
+         <input type="password" id="ai-key" placeholder="sk-ant-api03-..." autocomplete="off" style="flex:1">
+         <button class="btn sm" onclick="salvaChiaveAI()">Salva chiave</button>
+       </div>
+       <div style="font-size:11px; color:var(--text3); margin-top:4px">Serve una volta sola. Resta solo su questo browser (non va su Dropbox).</div>`;
+}
+function salvaChiaveAI() {
+  const k = (document.getElementById('ai-key').value || '').trim();
+  if (!k.startsWith('sk-ant-')) { showToast('⚠️ La chiave deve iniziare con sk-ant-'); return; }
+  try { localStorage.setItem('ciliegio_anthropic_key', k); } catch (e) { showToast('❌ Impossibile salvare la chiave in questo browser'); return; }
+  document.getElementById('ai-key-row').innerHTML = renderAiKeyRow();
+  showToast('✅ Chiave salvata');
+}
+function cambiaChiaveAI() {
+  try { localStorage.removeItem('ciliegio_anthropic_key'); } catch (e) {}
+  document.getElementById('ai-key-row').innerHTML = renderAiKeyRow();
+}
+
+function renderAiBox(id) {
+  return `
+  <details style="margin-bottom:16px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
+    <summary style="cursor:pointer; font-weight:600; font-size:13px">✨ Riscrivi i testi con AI (tema e tono)</summary>
+    <div style="margin-top:10px">
+      <label style="font-size:12px; color:var(--text2)">Di cosa deve parlare e con che tono? Scrivi anche cosa NON deve dire.</label>
+      <textarea id="ai-brief" style="min-height:80px" placeholder="Es: Parla dei piatti alla brace del ristorante, tono caldo e conviviale, autunnale. Non parlare di allevamento, salumi o spedizioni."></textarea>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap">
+        <button class="btn primary sm" id="ai-btn" onclick="generaTestiAI('${id}')">✨ Genera bozza</button>
+        <button class="btn sm" id="ai-undo" style="display:none" onclick="ripristinaTestiAI()">↩ Ripristina testo precedente</button>
+      </div>
+      <div style="font-size:11px; color:var(--text3); margin-top:6px; line-height:1.5">La bozza compila i due campi qui sotto: controllala, modificala, poi <strong>Salva modifiche</strong>. L'anteprima in alto si aggiorna dopo il salvataggio. Non esce nulla su FB/IG senza "Approva questa settimana".</div>
+      <div id="ai-key-row" style="margin-top:8px">${renderAiKeyRow()}</div>
+    </div>
+  </details>`;
+}
+
+// Controllo automatico dei contenuti (vale per qualunque testo, scritto a mano, di template o dell'AI):
+// segnala le affermazioni che l'azienda ha detto di NON voler mai fare.
+function controllaContenuti(text) {
+  const w = [];
+  if (!text) return w;
+  if (/allev/i.test(text)) w.push('parla di "allevamento": l\'azienda non ha un allevamento');
+  if (/\b(?:nostri|nostro|nostra|nostre)\s+(?:salumi|salame|salami|prosciutto|pancetta|carne|carni|formaggi|maiali|bistecche)\b/i.test(text)) {
+    w.push('attribuisce all\'azienda salumi, carne o formaggi ("i nostri salumi"…): non è produzione propria');
+  }
+  const frasi = text.split(/(?<=[.!?…])\s+|\n+/);
+  if (frasi.some(f => /spedi|consegn/i.test(f) && /salum|prosciutt|pancetta|\bcarn|bistecc|formagg/i.test(f))) {
+    w.push('promette spedizione o consegna di salumi, carne o formaggi');
+  }
+  return w;
+}
+function aggiornaAvvisiTesti() {
+  [['pd-fb', 'pd-warn-fb'], ['pd-ig', 'pd-warn-ig']].forEach(([campo, box]) => {
+    const el = document.getElementById(campo), out = document.getElementById(box);
+    if (!el || !out) return;
+    const w = controllaContenuti(el.value);
+    out.innerHTML = w.length
+      ? `<div style="margin-top:4px; font-size:12px; color:var(--amber); line-height:1.5">⚠️ Controlla questo testo: ${w.join('; ')}.</div>`
+      : '';
+  });
+}
+
+// Tema e vincoli → prompt. La struttura fissa NON la scrive il modello (vedi assemblaTestiReminder).
+function promptReminderAI(p, brief) {
+  const foto = (p.photoName || '').replace(/\.[a-z0-9]+$/i, '').replace(/^\d+\s*/, '').replace(/-/g, ' ').trim() || '(nessuna)';
+  return `Sei il social media manager dell'Azienda Agricola Il Ciliegio (Monteriggioni, Siena, Chianti Colli Senesi), azienda a conduzione familiare dal 1952, terza generazione. Scrivi il reminder settimanale del lunedì, che annuncia ai clienti che i menù del ristorante sono stati aggiornati.
+
+FATTI CERTI SULL'AZIENDA (sono gli unici che puoi usare): produce vino (Chianti Colli Senesi), olio extravergine, cereali antichi, farine, legumi, distillati e dolci; ha un ristorante con cucina tipica toscana; è un agriturismo didattico; fa vendita diretta e shop online.
+
+RICHIESTA DI LUCA (ha la precedenza su tutto, seguila alla lettera):
+"""${brief}"""
+
+FOTO ABBINATA AL POST (solo come spunto visivo, non descriverla per forza): ${foto}
+
+REGOLE FERREE:
+1. Usa solo i fatti sopra e ciò che scrive Luca. NON inventare piatti, ingredienti, provenienze, premi, numeri, prezzi, orari o persone.
+2. L'azienda NON ha un allevamento e NON produce salumi, prosciutto, carne o formaggi: non dirlo e non suggerirlo mai. Sono vietati "i nostri salumi", "dal nostro allevamento", "carne nostra", "formaggi nostri" e simili. Puoi parlare di ciò che si mangia al ristorante senza attribuirne la produzione all'azienda.
+3. Non parlare di spedizioni, consegne a domicilio, shop o acquisti online, a meno che Luca non lo chieda esplicitamente.
+4. Non scrivere link, indirizzi, numeri di telefono, "WhatsApp" o "link in bio": li aggiunge il sistema.
+5. Non scrivere né il saluto "Ovvia mimmi!" né l'annuncio dei menù: li aggiunge il sistema.
+6. Tono caldo, familiare, genuino; frasi brevi e concrete; niente superlativi né enfasi da pubblicità. Italiano corretto.
+
+Rispondi SOLO con un oggetto JSON valido (nessun testo attorno, nessun markdown) con queste chiavi:
+{
+  "emoji": "una sola emoji coerente col tema",
+  "corpoFb": "2 o 3 paragrafi brevi per Facebook, separati da una riga vuota",
+  "invitoFb": "una sola frase che invita a venire al ristorante, coerente col tema",
+  "domandaFb": "una domanda finale breve per stimolare i commenti",
+  "hashtagFb": ["4 hashtag tematici, senza # davanti"],
+  "corpoIg": "2 o 3 frasi per Instagram, più brevi e dirette di Facebook",
+  "hashtagIg": ["da 12 a 16 hashtag tematici, in italiano e qualcuno in inglese, senza # davanti"]
+}`;
+}
+
+// Risposta del modello → testi FB e IG completi, con la struttura fissa dei reminder.
+function assemblaTestiReminder(r) {
+  const s = (v) => (typeof v === 'string' ? v.trim() : '');
+  if (!s(r && r.corpoFb) || !s(r.corpoIg) || !s(r.invitoFb)) throw new Error('La risposta AI è incompleta — riprova');
+  const emoji = s(r.emoji) || '🍷';
+  const tags = (base, extra, coda, max) => {
+    const visti = new Set(), out = [];
+    [...base, ...(Array.isArray(extra) ? extra : []), ...coda].forEach(t => {
+      const pulito = String(t).replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '');
+      if (pulito && !visti.has(pulito.toLowerCase())) { visti.add(pulito.toLowerCase()); out.push('#' + pulito); }
+    });
+    return out.slice(0, max).join(' ');
+  };
+  const fb = [
+    `Ovvia mimmi! ${emoji} I menù della settimana sono aggiornati su https://www.ilciliegio.com/it/ristorante`,
+    s(r.corpoFb),
+    `${s(r.invitoFb)}\n${fbBloccoTesto()}`,
+    s(r.domandaFb),
+    tags(['IlCiliegioDiMonteriggioni'], r.hashtagFb, ['Monteriggioni'], 6)
+  ].filter(Boolean).join('\n\n');
+  const ig = [
+    `Ovvia mimmi! ${emoji} ${s(r.corpoIg)}`,
+    'I menù della settimana sono online: link in bio 👆.',
+    `Prenota 👉 link in bio | 📲 WhatsApp → ${WHATSAPP_RISTORANTE}`,
+    tags(['ilciliegiodimonteriggioni'], r.hashtagIg, ['monteriggioni', 'siena', 'toscana'], 20)
+  ].join('\n\n');
+  return { fb, ig: igLinkInBio(ig) };
+}
+
+let _aiPrevTesti = null;
+async function generaTestiAI(id) {
+  const found = findPostById(id);
+  if (!found) return;
+  const brief = (document.getElementById('ai-brief').value || '').trim();
+  if (brief.length < 10) { showToast('⚠️ Scrivi almeno una riga: di cosa deve parlare e con che tono'); return; }
+  if (!getAnthropicKey()) { showToast('⚠️ Inserisci prima la chiave API (in fondo al riquadro)'); return; }
+  const btn = document.getElementById('ai-btn');
+  btn.disabled = true; btn.textContent = '⏳ Sto scrivendo...';
+  try {
+    const risposta = await callClaude(promptReminderAI(found.post, brief), 2500);
+    const testi = assemblaTestiReminder(risposta);
+    _aiPrevTesti = { fb: document.getElementById('pd-fb').value, ig: document.getElementById('pd-ig').value };
+    document.getElementById('pd-fb').value = testi.fb;
+    document.getElementById('pd-ig').value = testi.ig;
+    document.getElementById('ai-undo').style.display = '';
+    aggiornaAvvisiTesti();
+    showToast('✅ Bozza pronta: controllala, poi "Salva modifiche"');
+  } catch (err) {
+    console.error(err);
+    showToast('❌ ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Genera bozza';
+  }
+}
+function ripristinaTestiAI() {
+  if (!_aiPrevTesti) return;
+  document.getElementById('pd-fb').value = _aiPrevTesti.fb;
+  document.getElementById('pd-ig').value = _aiPrevTesti.ig;
+  aggiornaAvvisiTesti();
+  showToast('↩ Testo precedente ripristinato');
 }
 
 // Approva il reminder della settimana: genera SUBITO la grafica IG (stessa resa che si
@@ -3190,6 +3431,8 @@ async function loadFromDropbox() {
     saveToStorage();
     if (cleaned) await saveToDropbox();
     await loadStoriesLog();
+    await loadPostLog();
+    applyPostLog();
     showView(STATE.currentView);
     showToast(`✅ Caricati ${STATE.posts.length} post da Dropbox!`);
     return true;
