@@ -13,7 +13,9 @@
 //     al momento dell'approvazione — vedi approvaSettimana() in CiliegioSocialMedia.html) + igText.
 //     Se manca graphicFile (approvazione fatta prima di questa versione, o generazione fallita),
 //     usa la foto pulita anche per IG.
-//  6. Segna il post come "published" su piano.json, per evitare di ripubblicare per errore.
+//  6. Registra l'esito di OGNI piattaforma in post-log.json (Dropbox): se FB esce e IG fallisce, il run
+//     successivo (cron di riserva o manuale) rifà solo IG, senza ripubblicare FB. Quando entrambe sono
+//     uscite segna il post come "published" su piano.json.
 //
 // Nessuna dipendenza npm: usa fetch/FormData/Blob globali di Node 20+.
 
@@ -21,6 +23,9 @@ const DROPBOX_API        = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT    = 'https://content.dropboxapi.com/2';
 const DROPBOX_TOKEN_URL  = 'https://api.dropboxapi.com/oauth2/token';
 const DROPBOX_FILE_PATH  = '/IlCiliegio/SocialMedia/piano.json';
+// Esito per piattaforma dei post del lunedì, scritto SOLO da questa Action. File separato da piano.json
+// apposta: CSM salva piano.json per intero con un elenco fisso di campi e scarterebbe i campi sconosciuti.
+const DROPBOX_LOG_PATH   = '/IlCiliegio/SocialMedia/post-log.json';
 const GRAPH_API           = 'https://graph.facebook.com/v21.0';
 
 // DRY_RUN di default true: bisogna passare esplicitamente 'false' per pubblicare davvero.
@@ -28,11 +33,26 @@ const GRAPH_API           = 'https://graph.facebook.com/v21.0';
 // rispettano l'input "dry_run" scelto da chi lancia il test.
 const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
+// Solo per recuperi manuali: "Facebook è già uscito (a mano o in un run finito male), non rifarlo".
+const FB_GIA_PUBBLICATO = String(process.env.FB_GIA_PUBBLICATO || 'false').toLowerCase() === 'true';
 
 function need(name) {
-  const v = process.env[name];
+  const raw = process.env[name];
+  const v = raw && raw.trim();
   if (!v) { console.error(`❌ Manca la variabile d'ambiente ${name} (GitHub Secret non configurato?)`); process.exit(1); }
+  // Uno spazio o un a-capo incollato insieme al secret fa rispondere Meta "Cannot parse access token".
+  if (v !== raw) console.warn(`⚠️ ${name} conteneva spazi/a-capo ai bordi: li ignoro (conviene rifare il secret senza).`);
   return v;
+}
+
+// I token Instagram Login ("IG...") vanno sul dominio Instagram; i token Facebook Login / Page ("EAA...")
+// su graph.facebook.com. Un token IG... su graph.facebook.com dà "Cannot parse access token".
+function igGraphApi(token) {
+  return token.startsWith('IG') ? 'https://graph.instagram.com/v21.0' : GRAPH_API;
+}
+// Diagnostica non sensibile: lunghezza e prime 3 lettere (EAA / IGA), per capire di che token si tratta.
+function describeToken(token) {
+  return `lunghezza ${token.length}, inizia con "${token.slice(0, 3)}"`;
 }
 
 async function dropboxAccessToken() {
@@ -85,6 +105,17 @@ async function dropboxDownloadJson(token, path) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) }
   });
+  if (!res.ok) throw new Error(`Download ${path} fallito: HTTP ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// Come dropboxDownloadJson, ma "file non esiste ancora" (409) restituisce null invece di errore.
+async function dropboxDownloadJsonOrNull(token, path) {
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) }
+  });
+  if (res.status === 409) return null;
   if (!res.ok) throw new Error(`Download ${path} fallito: HTTP ${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -171,7 +202,8 @@ async function fbPublishPhoto(pageId, pageToken, imageBuffer, caption) {
 }
 
 async function igPublishFeed(igUserId, igToken, imageUrl, caption) {
-  const createRes = await fetch(`${GRAPH_API}/${igUserId}/media`, {
+  const api = igGraphApi(igToken);
+  const createRes = await fetch(`${api}/${igUserId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image_url: imageUrl, caption, access_token: igToken })
@@ -179,7 +211,7 @@ async function igPublishFeed(igUserId, igToken, imageUrl, caption) {
   const created = await createRes.json();
   if (!createRes.ok || created.error) throw new Error(`Instagram media create fallito: ${JSON.stringify(created.error || created)}`);
 
-  const pubRes = await fetch(`${GRAPH_API}/${igUserId}/media_publish`, {
+  const pubRes = await fetch(`${api}/${igUserId}/media_publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ creation_id: created.id, access_token: igToken })
@@ -247,33 +279,109 @@ async function main() {
   console.log(`   Foto FB: ${post.photoFile}`);
   console.log(`   ${usaFotoSemplicePerIG ? `⚠️ Nessuna grafica IG salvata — uso la foto semplice anche per Instagram (${post.photoFile})` : `Grafica IG: ${post.graphicFile}`}`);
 
-  if (DRY_RUN) {
-    console.log('\n🧪 DRY RUN attivo — nessuna pubblicazione reale su Facebook/Instagram.');
-    console.log('--- Testo Facebook ---');
-    console.log(post.fbText);
-    console.log('--- Testo Instagram ---');
-    console.log(post.igText);
+  // Cosa è già uscito? (post-log.json). Una piattaforma con esito ok non si rifà mai; una con errore si ritenta.
+  const logIniziale = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
+  const gia = (logIniziale.posts || {})[postId] || {};
+  let fbFatto = !!(gia.fb && gia.fb.ok);
+  const igFatto = !!(gia.ig && gia.ig.ok);
+  console.log(`📋 Stato registrato: Facebook ${fbFatto ? `già pubblicato (${gia.fb.at})` : 'da pubblicare'} · Instagram ${igFatto ? `già pubblicato (${gia.ig.at})` : 'da pubblicare'}`);
+
+  if (FB_GIA_PUBBLICATO && !fbFatto) {
+    if (DRY_RUN) {
+      console.log('🧪 DRY RUN: con "fb_gia_pubblicato" segnerei Facebook come già pubblicato.');
+    } else {
+      await segnaEsito(dbxToken, postId, 'fb', { ok: true, id: 'manuale', at: new Date().toISOString() });
+      console.log('📝 Facebook segnato come già pubblicato (input manuale): non lo rifaccio.');
+    }
+    fbFatto = true;
+  }
+
+  if (fbFatto && igFatto) {
+    console.log('ℹ️ Entrambe le piattaforme risultano già pubblicate: allineo solo piano.json.');
+    if (!DRY_RUN) await segnaPubblicatoSuPiano(dbxToken, postId, post);
     return;
   }
 
-  const fbPageId = need('FB_PAGE_ID');
-  const fbToken  = need('FB_PAGE_ACCESS_TOKEN');
-  const igUserId = need('IG_USER_ID');
-  const igToken  = need('IG_ACCESS_TOKEN');
+  if (DRY_RUN) {
+    console.log('\n🧪 DRY RUN attivo — nessuna pubblicazione reale su Facebook/Instagram.');
+    if (!fbFatto) { console.log('--- Testo Facebook (da pubblicare) ---'); console.log(post.fbText); }
+    if (!igFatto) { console.log('--- Testo Instagram (da pubblicare) ---'); console.log(post.igText); }
+    return;
+  }
 
-  console.log('\n📤 Pubblico su Facebook...');
-  const fbPhotoBuffer = await dropboxDownloadBytes(dbxToken, post.photoFile);
-  const fbResult = await fbPublishPhoto(fbPageId, fbToken, fbPhotoBuffer, post.fbText);
-  console.log(`✅ Facebook pubblicato: id ${fbResult.post_id || fbResult.id}`);
+  const fbPageId = fbFatto ? null : need('FB_PAGE_ID');
+  const fbToken  = fbFatto ? null : need('FB_PAGE_ACCESS_TOKEN');
+  const igUserId = igFatto ? null : need('IG_USER_ID');
+  const igToken  = igFatto ? null : need('IG_ACCESS_TOKEN');
 
-  console.log('\n📤 Pubblico su Instagram...');
-  const igImagePath = post.graphicFile || post.photoFile;
-  const igImageUrl = await dropboxTempLink(dbxToken, igImagePath);
-  const igResult = await igPublishFeed(igUserId, igToken, igImageUrl, post.igText);
-  console.log(`✅ Instagram pubblicato: media id ${igResult.id}`);
+  // Le due piattaforme sono indipendenti: se una fallisce l'altra si prova comunque.
+  let errori = 0;
 
+  if (!fbFatto) {
+    try {
+      console.log('\n📤 Pubblico su Facebook...');
+      const fbPhotoBuffer = await dropboxDownloadBytes(dbxToken, post.photoFile);
+      const fbResult = await fbPublishPhoto(fbPageId, fbToken, fbPhotoBuffer, post.fbText);
+      const fbId = fbResult.post_id || fbResult.id;
+      console.log(`✅ Facebook pubblicato: id ${fbId}`);
+      await registraEsito(dbxToken, postId, 'fb', { ok: true, id: fbId, at: new Date().toISOString() }, 'Facebook');
+    } catch (err) {
+      errori++;
+      console.error(`❌ Facebook fallito: ${err.message}`);
+      await registraEsito(dbxToken, postId, 'fb', { ok: false, error: String(err.message).slice(0, 300), at: new Date().toISOString() }, 'Facebook');
+    }
+  }
+
+  if (!igFatto) {
+    try {
+      console.log('\n📤 Pubblico su Instagram...');
+      console.log(`   Token IG: ${describeToken(igToken)} — dominio ${igGraphApi(igToken)}`);
+      const igImagePath = post.graphicFile || post.photoFile;
+      const igImageUrl = await dropboxTempLink(dbxToken, igImagePath);
+      const igResult = await igPublishFeed(igUserId, igToken, igImageUrl, post.igText);
+      console.log(`✅ Instagram pubblicato: media id ${igResult.id}`);
+      await registraEsito(dbxToken, postId, 'ig', { ok: true, id: igResult.id, at: new Date().toISOString() }, 'Instagram');
+    } catch (err) {
+      errori++;
+      console.error(`❌ Instagram fallito: ${err.message}`);
+      await registraEsito(dbxToken, postId, 'ig', { ok: false, error: String(err.message).slice(0, 300), at: new Date().toISOString() }, 'Instagram');
+    }
+  }
+
+  if (errori) {
+    console.error(`\n⚠️ Pubblicazione incompleta (${errori} piattaforma/e con errore). Il post resta "approvato" e il prossimo run rifà SOLO quella mancante.`);
+    process.exitCode = 1;
+    return;
+  }
+  await segnaPubblicatoSuPiano(dbxToken, postId, post);
+}
+
+// Scrive l'esito di una piattaforma in post-log.json. Rilegge il file ogni volta (nessuno stato in memoria).
+async function segnaEsito(dbxToken, postId, piattaforma, esito) {
+  const log = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
+  log.posts = log.posts || {};
+  log.posts[postId] = { ...(log.posts[postId] || {}), [piattaforma]: esito };
+  log.lastUpdated = new Date().toISOString();
+  await dropboxUploadJson(dbxToken, DROPBOX_LOG_PATH, log);
+}
+
+// Come segnaEsito, ma non lancia: il post è già uscito, un errore di scrittura del registro non deve
+// far fallire il run. Va però gridato, perché un run successivo ripubblicherebbe quella piattaforma.
+async function registraEsito(dbxToken, postId, piattaforma, esito, nome) {
+  try {
+    await segnaEsito(dbxToken, postId, piattaforma, esito);
+  } catch (err) {
+    const avviso = esito.ok ? ` ${nome} è uscito ma un nuovo run lo ripubblicherebbe: se serve, lanciare a mano con "fb_gia_pubblicato".` : '';
+    console.error(`⚠️⚠️ ATTENZIONE: esito ${nome} NON registrato su Dropbox (${err.message}).${avviso}`);
+  }
+}
+
+// Quando FB e IG sono entrambi usciti: status "published" su piano.json (per CSM e per il controllo
+// anti doppio post). Rilegge piano.json prima di scrivere, per non sovrascrivere modifiche fatte da CSM nel frattempo.
+async function segnaPubblicatoSuPiano(dbxToken, postId, post) {
+  const piano = await dropboxDownloadJson(dbxToken, DROPBOX_FILE_PATH);
   piano.recurringOverrides = piano.recurringOverrides || {};
-  piano.recurringOverrides[postId] = { ...post, status: 'published' };
+  piano.recurringOverrides[postId] = { ...(piano.recurringOverrides[postId] || post), status: 'published' };
   piano.lastSaved = new Date().toISOString();
   await dropboxUploadJson(dbxToken, DROPBOX_FILE_PATH, piano);
   console.log('\n💾 piano.json aggiornato su Dropbox (status: published).');

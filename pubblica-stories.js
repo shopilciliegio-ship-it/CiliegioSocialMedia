@@ -43,9 +43,18 @@ const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
 
 function need(name) {
-  const v = process.env[name];
+  const raw = process.env[name];
+  const v = raw && raw.trim();
   if (!v) { console.error(`❌ Manca la variabile d'ambiente ${name} (GitHub Secret non configurato?)`); process.exit(1); }
+  // Uno spazio o un a-capo incollato insieme al secret fa rispondere Meta "Cannot parse access token".
+  if (v !== raw) console.warn(`⚠️ ${name} conteneva spazi/a-capo ai bordi: li ignoro (conviene rifare il secret senza).`);
   return v;
+}
+
+// I token Instagram Login ("IG...") vanno sul dominio Instagram; i token Facebook Login / Page ("EAA...")
+// su graph.facebook.com. Un token IG... su graph.facebook.com dà "Cannot parse access token".
+function igGraphApi(token) {
+  return token.startsWith('IG') ? 'https://graph.instagram.com/v21.0' : GRAPH_API;
 }
 
 // Numerazione canonica (stessa di CANONICAL in carica-menu-sito.js, repo Ciliegio Menu) e
@@ -204,7 +213,8 @@ function imageUrlFor(num, dayName, servizio) {
 }
 
 async function igPublishStory(igUserId, igToken, imageUrl) {
-  const createRes = await fetch(`${GRAPH_API}/${igUserId}/media`, {
+  const api = igGraphApi(igToken);
+  const createRes = await fetch(`${api}/${igUserId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image_url: imageUrl, media_type: 'STORIES', access_token: igToken })
@@ -212,7 +222,7 @@ async function igPublishStory(igUserId, igToken, imageUrl) {
   const created = await createRes.json();
   if (!createRes.ok || created.error) throw new Error(`IG media create fallito: ${JSON.stringify(created.error || created)}`);
 
-  const pubRes = await fetch(`${GRAPH_API}/${igUserId}/media_publish`, {
+  const pubRes = await fetch(`${api}/${igUserId}/media_publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ creation_id: created.id, access_token: igToken })
@@ -300,6 +310,7 @@ async function main() {
 
   const igUserId = need('IG_USER_ID');
   const igToken  = need('IG_ACCESS_TOKEN');
+  console.log(`🔑 Token IG: lunghezza ${igToken.length}, inizia con "${igToken.slice(0, 3)}" — dominio ${igGraphApi(igToken)}`);
 
   let hadError = false;
   const results = {};

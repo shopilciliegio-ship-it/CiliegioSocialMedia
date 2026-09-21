@@ -18,6 +18,10 @@ on:
         description: 'Ignora il controllo giorno/ora (solo per test manuali)'
         type: boolean
         default: true
+      fb_gia_pubblicato:
+        description: 'Recupero: Facebook è già uscito (es. run finito male), non rifarlo e pubblica solo quel che manca'
+        type: boolean
+        default: false
 
 # Un solo run alla volta: timer esterno e cron di riserva non devono mai girare in parallelo.
 concurrency:
@@ -43,4 +47,5 @@ jobs:
           # Cron (produzione): pubblica davvero. workflow_dispatch: rispetta l'input scelto.
           DRY_RUN:   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+          FB_GIA_PUBBLICATO: ${{ github.event_name == 'workflow_dispatch' && inputs.fb_gia_pubblicato || 'false' }}
         run: node pubblica-social.js
