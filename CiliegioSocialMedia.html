@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.21.0',
+    version: '2.21.1',
     date: '2026-09-21',
     current: true,
+    description: 'Testo Instagram del reminder: Instagram non rende cliccabili i link nelle didascalie, quindi "i menù della settimana sono online" ora rimanda al "link in bio" (la bio punta a ilciliegio.com/it/ristorante) al posto del link in chiaro. Vale per i template e per i testi già salvati delle settimane non ancora pubblicate; Facebook resta con il link cliccabile.'
+  },
+  {
+    version: '2.21.0',
+    date: '2026-09-21',
+    current: false,
     description: 'Le story del giorno ora hanno una veste: la GitHub Action (story-grafica.js) compone al momento della pubblicazione un\'immagine 9:16 con la scritta fissa ICCHESSIMANGIAOGGI? in Titan One, sfondo nel colore della settimana (stesso della grafica IG del lunedì), il menù del giorno come cartolina e il cerchio col logo a sigillo sull\'angolo. Se la composizione fallisce esce il JPG del menù semplice. L\'anteprima nel dettaglio story del calendario mostra la story vera (stessa composizione, ridisegnata nel browser).'
   },
   {
@@ -1157,6 +1163,22 @@ const FOTO_ROTAZIONE = [
   { numero: 55, file: "55 Barriccaia-lanterne-botti-seppia.jpg", categoria: "storia di famiglia", fbText: "Ovvia mimmi! 🕯️ I menù della settimana sono aggiornati su https://www.ilciliegio.com/it/ristorante\n\nUn'altra foto seppia che custodiamo con cura: la barriccaia illuminata da lanterne, le botti allineate in penombra. Anche se cambiano le tecnologie e i metodi, il cuore del nostro lavoro in cantina resta lo stesso da generazioni. 🍷\n\nVieni a scoprire dove nasce oggi il nostro vino.\nPrenota su WhatsApp → wa.me/393291767348 oppure sul sito, cliccando su \"Prenota\" 👉 www.ilciliegio.com\n\nVi piace questo scatto d'atmosfera in cantina? 🕯️\n\n#IlCiliegioDiMonteriggioni #StoriaDiFamiglia #Cantina #ChiantiCollisenesi #Monteriggioni", igText: "Ovvia mimmi! 🕯️ La barriccaia illuminata da lanterne, botti allineate in penombra.\n\nIl cuore del nostro lavoro in cantina, lo stesso da generazioni. I menù della settimana sono online. 🍷\n\nPrenota 👉 www.ilciliegio.com | 📲 WhatsApp → wa.me/393291767348\n\n#ilciliegiodimonteriggioni #storiadifamiglia #cantina #chianticollisenesi #monteriggioni #siena #toscanamia #vintage #terzagenerazione #viafrancigena #barriccaia #memoria #toscana #heritage #farmtotable #ruralita #countryside #seppia #tradizionetoscana #winelover" },
 ];
 
+// Instagram non rende cliccabili i link nelle didascalie (solo hashtag e @menzioni): per il menù della
+// settimana la didascalia IG rimanda al "link in bio", che punta a https://www.ilciliegio.com/it/ristorante
+// (impostato a mano nel profilo: le API di Instagram non permettono di modificare la bio).
+// Idempotente. Usata sui template e sui testi già salvati in piano.json (che altrimenti terrebbero il
+// vecchio testo, perché CSM salva anche i reminder mai toccati).
+function igLinkInBio(text) {
+  if (!text) return text;
+  let t = text
+    .replace(/\s+su\s+https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, ': link in bio 👆') // "sono online su <URL>"
+    .replace(/https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, 'link in bio 👆');            // URL da solo
+  if (!/link in bio/i.test(t)) {
+    t = t.replace(/(menù della settimana[^.\n]*?sono online)(?=[.\s])/i, '$1: link in bio 👆');
+  }
+  return t;
+}
+
 function pickRotazioneFoto(dateStr) {
   const weekIdx = reminderWeekIndex(dateStr);
   const idx = ((weekIdx % FOTO_ROTAZIONE.length) + FOTO_ROTAZIONE.length) % FOTO_ROTAZIONE.length;
@@ -1236,7 +1258,7 @@ function makeRecurringPost(type, date) {
       // pronto per la revisione in calendario appena generato.
       const rot = pickRotazioneFoto(dateStr);
       if (rot) {
-        fbText = rot.fbText; igText = rot.igText;
+        fbText = rot.fbText; igText = igLinkInBio(rot.igText);
         photoFile = `${DROPBOX_PHOTO_FOLDER}/${rot.file}`.toLowerCase();
         photoName = rot.file;
         status = 'ready';
@@ -1397,7 +1419,7 @@ function applyRecurringOverrides(source) {
     const o = source[p.id];
     if (!o) return;
     if (o.fbText)                         p.fbText    = o.fbText;
-    if (o.igText)                         p.igText    = o.igText;
+    if (o.igText)                         p.igText    = (p.recurringType === 'reminder' && o.status !== 'published') ? igLinkInBio(o.igText) : o.igText;
     if (o.photoHint)                      p.photoHint = o.photoHint;
     if (o.photoFile)                      p.photoFile = o.photoFile;
     if (o.photoName)                      p.photoName = o.photoName;
