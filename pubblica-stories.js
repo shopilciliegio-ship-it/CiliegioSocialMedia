@@ -24,6 +24,8 @@
 //
 // Nessuna dipendenza npm: usa fetch globale di Node 20+.
 
+const { getIgToken } = require('./ig-token');
+
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 const IMG_BASE  = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito/';
 
@@ -342,7 +344,7 @@ async function main() {
   }
 
   const igUserId = need('IG_USER_ID');
-  const igToken  = need('IG_ACCESS_TOKEN');
+  const igToken  = await getIgToken(dbxToken, need('IG_ACCESS_TOKEN')); // rinnovato su Dropbox se c'è, altrimenti il secret
   console.log(`🔑 Token IG: lunghezza ${igToken.length}, inizia con "${igToken.slice(0, 3)}" — dominio ${igGraphApi(igToken)}`);
 
   let hadError = false;

@@ -19,6 +19,8 @@
 //
 // Nessuna dipendenza npm: usa fetch/FormData/Blob globali di Node 20+.
 
+const { getIgToken } = require('./ig-token');
+
 const DROPBOX_API        = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT    = 'https://content.dropboxapi.com/2';
 const DROPBOX_TOKEN_URL  = 'https://api.dropboxapi.com/oauth2/token';
@@ -345,7 +347,7 @@ async function main() {
   const fbPageId = fbFatto ? null : need('FB_PAGE_ID');
   const fbToken  = fbFatto ? null : need('FB_PAGE_ACCESS_TOKEN');
   const igUserId = igFatto ? null : need('IG_USER_ID');
-  const igToken  = igFatto ? null : need('IG_ACCESS_TOKEN');
+  const igToken  = igFatto ? null : await getIgToken(dbxToken, need('IG_ACCESS_TOKEN')); // rinnovato su Dropbox se c'è, altrimenti il secret
 
   // Le due piattaforme sono indipendenti: se una fallisce l'altra si prova comunque.
   let errori = 0;
