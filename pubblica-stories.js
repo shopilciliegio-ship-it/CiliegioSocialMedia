@@ -212,6 +212,46 @@ function imageUrlFor(num, dayName, servizio) {
   return IMG_BASE + encodeURIComponent(`${num}-${dayName}-${servizio}.jpg`);
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Instagram elabora il contenitore in modo asincrono: pubblicarlo subito dà "Media ID is not available"
+// (code 9007, subcode 2207027). Si aspetta status_code FINISHED, poi si pubblica; se per qualche
+// motivo risponde ancora "non pronto" si riprova qualche volta. Un contenitore rimasto non pubblicato
+// scade da solo: un nuovo tentativo ne crea uno nuovo, non c'è rischio di doppio post.
+async function igPublishContainer(api, igUserId, igToken, containerId) {
+  const t0 = Date.now();
+  let status = '';
+  while (Date.now() - t0 < 120000) {
+    const res = await fetch(`${api}/${containerId}?fields=status_code&access_token=${encodeURIComponent(igToken)}`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      console.warn(`⚠️ Stato del contenitore IG non leggibile (${JSON.stringify(data.error || data)}) — provo a pubblicare comunque.`);
+      break;
+    }
+    status = data.status_code;
+    if (status === 'FINISHED') break;
+    if (status === 'ERROR' || status === 'EXPIRED') throw new Error(`Contenitore IG in stato ${status}: ${JSON.stringify(data)}`);
+    await sleep(3000);
+  }
+  console.log(`   Contenitore IG ${containerId}: ${status || 'stato sconosciuto'} dopo ${Math.round((Date.now() - t0) / 1000)}s`);
+
+  let published;
+  for (let tentativo = 1; tentativo <= 4; tentativo++) {
+    const pubRes = await fetch(`${api}/${igUserId}/media_publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creation_id: containerId, access_token: igToken })
+    });
+    published = await pubRes.json();
+    if (pubRes.ok && !published.error) return published;
+    const nonPronto = published.error && published.error.error_subcode === 2207027;
+    if (!nonPronto || tentativo === 4) break;
+    console.log(`   Media non ancora pronto (tentativo ${tentativo}/4) — riprovo tra 5s...`);
+    await sleep(5000);
+  }
+  throw new Error(`Instagram media_publish fallito: ${JSON.stringify(published.error || published)}`);
+}
+
 async function igPublishStory(igUserId, igToken, imageUrl) {
   const api = igGraphApi(igToken);
   const createRes = await fetch(`${api}/${igUserId}/media`, {
@@ -222,14 +262,7 @@ async function igPublishStory(igUserId, igToken, imageUrl) {
   const created = await createRes.json();
   if (!createRes.ok || created.error) throw new Error(`IG media create fallito: ${JSON.stringify(created.error || created)}`);
 
-  const pubRes = await fetch(`${api}/${igUserId}/media_publish`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creation_id: created.id, access_token: igToken })
-  });
-  const published = await pubRes.json();
-  if (!pubRes.ok || published.error) throw new Error(`IG media_publish fallito: ${JSON.stringify(published.error || published)}`);
-  return published;
+  return igPublishContainer(api, igUserId, igToken, created.id);
 }
 
 async function main() {
