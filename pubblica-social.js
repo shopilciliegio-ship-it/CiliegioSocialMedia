@@ -196,9 +196,13 @@ async function main() {
       console.log(`ℹ️ Oggi non è lunedì a Europe/Rome (${weekday}) — nessuna azione.`);
       return;
     }
+    // Finestra 9:00–10:59 (non "esattamente le 9"): il trigger è un timer esterno preciso, ma se parte
+    // con qualche minuto di scarto, o interviene il cron GitHub di riserva, deve comunque pubblicare la
+    // mattina. Dopo le 11 no: un post del lunedì che esce nel pomeriggio non serve. Niente doppio post:
+    // sotto c'è il controllo status === 'published'.
     const hour = romeHour();
-    if (hour !== 9) {
-      console.log(`ℹ️ Non sono le 9:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione, aspetto l'orario giusto.`);
+    if (hour < 9 || hour >= 11) {
+      console.log(`ℹ️ Fuori dalla finestra 9:00–11:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
       return;
     }
   } else {

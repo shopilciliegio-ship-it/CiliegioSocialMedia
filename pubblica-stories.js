@@ -224,9 +224,11 @@ async function igPublishStory(igUserId, igToken, imageUrl) {
 
 async function main() {
   if (!FORCE_RUN) {
+    // Finestra 9:00–10:59 (non "esattamente le 9"): vedi pubblica-social.js. Il doppio invio è evitato
+    // dal registro stories-log.json (sotto), non dall'orario.
     const hour = romeHour();
-    if (hour !== 9) {
-      console.log(`ℹ️ Non sono le 9:30 a Europe/Rome (ora attuale: ${hour}) — nessuna azione, aspetto l'orario giusto.`);
+    if (hour < 9 || hour >= 11) {
+      console.log(`ℹ️ Fuori dalla finestra 9:00–11:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
       return;
     }
   } else {
@@ -253,6 +255,22 @@ async function main() {
   }
   console.log(`✅ Settimana approvata (${postId}, stato: ${status}).`);
 
+  // Anti doppio invio: con più trigger (timer esterno + cron GitHub di riserva) la story già uscita oggi
+  // non va ripubblicata. Una story con errore invece viene ritentata al giro successivo. Anche in dry run
+  // si legge il registro, così il test mostra cosa farebbe davvero. Per rifare una story a mano:
+  // togliere la sua voce da stories-log.json su Dropbox.
+  const oggi = romeDateStr();
+  const logIniziale = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
+  const giaFatte = (logIniziale.stories || {})[oggi] || {};
+  const daFare = ['pranzo', 'cena'].filter(label => !(giaFatte[label] && giaFatte[label].ok));
+  for (const label of ['pranzo', 'cena']) {
+    if (!daFare.includes(label)) console.log(`ℹ️ Story ${label} già pubblicata oggi (${giaFatte[label].at}) — la salto.`);
+  }
+  if (!daFare.length) {
+    console.log('✅ Entrambe le story di oggi sono già uscite — nessuna azione.');
+    return;
+  }
+
   // Immagini: composizione con la grafica (colore della settimana = quello del post del lunedì, dal numero
   // della foto del reminder). Anche in dry run si compone e si salva su Dropbox (utile per vederla), ma non si pubblica.
   const grafica = loadStoryGrafica();
@@ -270,12 +288,13 @@ async function main() {
   }
   const prepared = {};
   for (const [label, num, plainUrl] of [['pranzo', info.pranzo, pranzoUrl], ['cena', info.cena, cenaUrl]]) {
+    if (!daFare.includes(label)) continue;
     prepared[label] = await prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, dbxToken });
   }
 
   if (DRY_RUN) {
     console.log('\n🧪 DRY RUN attivo — nessuna story pubblicata davvero.');
-    for (const label of ['pranzo', 'cena']) console.log(`   ${label}: ${prepared[label].composed ? 'grafica composta (vedi Dropbox)' : 'immagine semplice'}`);
+    for (const label of daFare) console.log(`   ${label}: ${prepared[label].composed ? 'grafica composta (vedi Dropbox)' : 'immagine semplice'}`);
     return;
   }
 
@@ -284,7 +303,7 @@ async function main() {
 
   let hadError = false;
   const results = {};
-  for (const label of ['pranzo', 'cena']) {
+  for (const label of daFare) {
     try {
       console.log(`\n📤 Pubblico story ${label}...`);
       const result = await igPublishStory(igUserId, igToken, prepared[label].url);

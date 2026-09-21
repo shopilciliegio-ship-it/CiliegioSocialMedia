@@ -2,10 +2,12 @@ name: Pubblica social del lunedì
 
 on:
   schedule:
-    # Due orari per coprire il cambio ora legale/solare: lo script controlla comunque
-    # l'ora reale a Europe/Rome e non fa nulla se non sono davvero le 9:00 lì.
-    - cron: '0 7 * * 1'  # 09:00 Europe/Rome quando è in vigore CEST (ora legale, UTC+2)
-    - cron: '0 8 * * 1'  # 09:00 Europe/Rome quando è in vigore CET (ora solare, UTC+1)
+    # RISERVA. Il trigger principale è un timer esterno (cron-job.org) che lancia questo workflow via API
+    # (workflow_dispatch) alle 9:00 Europe/Rome: il cron di GitHub è "best effort" e in pratica parte con ore
+    # di ritardo. Qui restano due orari (ora legale/solare) su minuti non tondi, meno congestionati; lo script
+    # pubblica solo nella finestra 9:00–11:00 Europe/Rome e mai due volte (status "published").
+    - cron: '7 7 * * 1'  # 09:07 Europe/Rome con CEST (ora legale, UTC+2)
+    - cron: '7 8 * * 1'  # 09:07 Europe/Rome con CET (ora solare, UTC+1)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -16,6 +18,11 @@ on:
         description: 'Ignora il controllo giorno/ora (solo per test manuali)'
         type: boolean
         default: true
+
+# Un solo run alla volta: timer esterno e cron di riserva non devono mai girare in parallelo.
+concurrency:
+  group: pubblica-lunedi
+  cancel-in-progress: false
 
 jobs:
   pubblica:
