@@ -1,0 +1,86 @@
+// worker.js — timer esterno (Cloudflare Worker) per i workflow social.
+//
+// Perché esiste: il cron di GitHub Actions parte con ore di ritardo (19-21/9/2026: run alle 14-15 invece che
+// alle 9:30). Un "Run workflow" (workflow_dispatch) invece parte subito. Questo Worker, che Cloudflare
+// esegue puntuale, lancia il workflow giusto all'ora giusta (Europe/Rome).
+//
+// Un solo cron trigger: "0,30 7,8 * * *" (UTC). Copre ora legale e solare; il Worker guarda l'ora vera di
+// Roma e lancia solo se è il momento giusto:
+//   - lunedì  9:00 Roma → pubblica-lunedi.yml   (post FB + IG del reminder)
+//   - ogni giorno 9:30 Roma → pubblica-stories.yml   (stories pranzo + cena)
+// L'altro dei due orari UTC (l'ora dell'altra stagione) viene ignorato.
+//
+// I workflow hanno comunque la finestra 9:00–11:00 e il controllo anti doppio invio: se questo timer e il cron
+// di riserva di GitHub partono entrambi, non si pubblica due volte.
+//
+// Segreti (Worker → Settings → Variables and Secrets, tipo "Secret"):
+//   GITHUB_TOKEN  token fine-grained GitHub, solo repo CiliegioSocialMedia, permesso Actions: Read and write
+//   TEST_KEY      una stringa a caso, serve solo per la pagina di prova /test/<TEST_KEY>/<lunedi|stories>
+
+const OWNER = 'shopilciliegio-ship-it';
+const REPO  = 'CiliegioSocialMedia';
+const BRANCH = 'main';
+
+// Quando parte ciascun job, in ora di Roma. slot = 0 (allo scoccare dell'ora) o 30 (e mezza).
+const JOBS = {
+  lunedi:  { workflow: 'pubblica-lunedi.yml',  quando: r => r.weekday === 'Mon' && r.hour === 9 && r.slot === 0 },
+  stories: { workflow: 'pubblica-stories.yml', quando: r => r.hour === 9 && r.slot === 30 },
+};
+
+function romeNow(date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+      .formatToParts(date).map(p => [p.type, p.value])
+  );
+  const minute = parseInt(parts.minute, 10);
+  return { weekday: parts.weekday, hour: parseInt(parts.hour, 10) % 24, minute, slot: minute < 15 ? 0 : (minute < 45 ? 30 : 60) };
+}
+
+// Lancia il workflow. Errori nostri (token, permessi, nome file) → subito eccezione; errori di GitHub (5xx, 429) → 3 tentativi.
+async function dispatch(env, job, { dry = false, force = false } = {}) {
+  const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${JOBS[job].workflow}/dispatches`;
+  const body = JSON.stringify({ ref: BRANCH, inputs: { dry_run: String(dry), force: String(force) } });
+  for (let tentativo = 1; tentativo <= 3; tentativo++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'ciliegio-timer',
+        'Content-Type': 'application/json'
+      },
+      body
+    });
+    if (res.status === 204) return `OK: lanciato ${JOBS[job].workflow} (dry_run=${dry}, force=${force}), tentativo ${tentativo}`;
+    const testo = (await res.text()).slice(0, 300);
+    if (res.status < 500 && res.status !== 429) throw new Error(`GitHub ha risposto ${res.status} per ${JOBS[job].workflow}: ${testo}`);
+    await new Promise(r => setTimeout(r, 2000 * tentativo));
+  }
+  throw new Error(`GitHub non raggiungibile per ${JOBS[job].workflow} dopo 3 tentativi`);
+}
+
+export default {
+  // Chiamato da Cloudflare secondo il cron trigger.
+  async scheduled(event, env) {
+    const r = romeNow(new Date(event.scheduledTime));
+    const lanciati = Object.keys(JOBS).filter(j => JOBS[j].quando(r));
+    if (!lanciati.length) {
+      console.log(`Niente da lanciare: a Roma sono ${r.weekday} ${r.hour}:${String(r.minute).padStart(2, '0')} (orario dell'altra stagione, ignorato).`);
+      return;
+    }
+    for (const j of lanciati) console.log(await dispatch(env, j));   // se lancia eccezione l'esecuzione risulta fallita nei log di Cloudflare
+  },
+
+  // Pagina di prova: /test/<TEST_KEY>/<lunedi|stories>  → lancia il workflow in modalità TEST (dry_run + force:
+  // logga cosa farebbe, non pubblica nulla). Con una chiave sbagliata risponde 404.
+  async fetch(request, env) {
+    const [, sezione, chiave, job] = new URL(request.url).pathname.split('/');
+    if (sezione !== 'test' || !env.TEST_KEY || chiave !== env.TEST_KEY || !JOBS[job]) return new Response('Not found', { status: 404 });
+    try {
+      return new Response(await dispatch(env, job, { dry: true, force: true }) + '\n');
+    } catch (err) {
+      return new Response(`ERRORE: ${err.message}\n`, { status: 502 });
+    }
+  }
+};
