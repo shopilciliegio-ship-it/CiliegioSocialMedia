@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.21.1',
+    version: '2.21.2',
     date: '2026-09-21',
     current: true,
+    description: 'Reminder Instagram: il rimando "I menù della settimana sono online: link in bio 👆" ora è sempre presente. Gli 8 template il cui testo IG parla di altro (cesti regalo, botti, formaggi…) ricevono la riga come paragrafo a sé, prima della CTA; negli altri 47 resta nella frase sui menù.'
+  },
+  {
+    version: '2.21.1',
+    date: '2026-09-21',
+    current: false,
     description: 'Testo Instagram del reminder: Instagram non rende cliccabili i link nelle didascalie, quindi "i menù della settimana sono online" ora rimanda al "link in bio" (la bio punta a ilciliegio.com/it/ristorante) al posto del link in chiaro. Vale per i template e per i testi già salvati delle settimane non ancora pubblicate; Facebook resta con il link cliccabile.'
   },
   {
@@ -1170,11 +1176,22 @@ const FOTO_ROTAZIONE = [
 // vecchio testo, perché CSM salva anche i reminder mai toccati).
 function igLinkInBio(text) {
   if (!text) return text;
+  const RIGA = 'I menù della settimana sono online: link in bio 👆.';
+  const haMenuInBio = s => /menù[^\n]*link in bio/i.test(s);
   let t = text
     .replace(/\s+su\s+https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, ': link in bio 👆') // "sono online su <URL>"
     .replace(/https?:\/\/(?:www\.)?ilciliegio\.com\/it\/ristorante\/?/gi, 'link in bio 👆');            // URL da solo
-  if (!/link in bio/i.test(t)) {
+  // Frase sui menù già presente ma senza rimando: lo aggiunge in coda alla frase.
+  if (!haMenuInBio(t)) {
     t = t.replace(/(menù della settimana[^.\n]*?sono online)(?=[.\s])/i, '$1: link in bio 👆');
+  }
+  // Nessuna frase sui menù (es. template su cesti regalo o vino): riga a sé, prima della CTA o degli hashtag.
+  // Il reminder esiste per i menù aggiornati, quindi il rimando alla pagina ristorante non deve mai mancare.
+  if (!haMenuInBio(t)) {
+    const cta = t.search(/^(?:Ordina o prenota|Prenota|Info ed eventi)\b/m);
+    const tag = t.search(/^#/m);
+    const pos = cta >= 0 ? cta : tag;
+    t = pos >= 0 ? t.slice(0, pos) + RIGA + '\n\n' + t.slice(pos) : t.trimEnd() + '\n\n' + RIGA;
   }
   return t;
 }
