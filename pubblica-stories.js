@@ -28,6 +28,11 @@ const { getIgToken } = require('./ig-token');
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 const IMG_BASE  = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito/';
+// Stessa fonte di verità che usa Completa-Immagini-Mancanti.ps1 (repo Ciliegio Menu) per decidere se un
+// giorno/servizio ha un menù reale o va riempito con la cartolina generica "AL COMPLETO": se non c'è la
+// chiave "${data}_${servizio}_Menù del Sito" in menu-data.json, l'immagine di quel giorno è quella
+// generica — e in quel caso la story non deve invitare a prenotare (vedi haMenuReale sotto).
+const MENU_DATA_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/menu-data.json';
 
 const DROPBOX_API       = 'https://api.dropboxapi.com/2';
 const DROPBOX_CONTENT   = 'https://content.dropboxapi.com/2';
@@ -146,6 +151,27 @@ async function fetchBuffer(url) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+// null se non scaricabile/non parsabile: chi chiama tratta "non so" come "NON è un menù reale"
+// (fail-closed — meglio una story senza pillola "Prenota" che una su un giorno al completo).
+async function fetchMenuDataOrNull() {
+  try {
+    const res = await fetch(MENU_DATA_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn(`⚠️ menu-data.json non scaricabile (${err.message}) — per sicurezza tratto tutti i servizi di oggi come "non confermati" (niente pillola "Prenota").`);
+    return null;
+  }
+}
+
+// Stessa chiave usata da mkKey() in Ciliegio-Menu.html e dallo script Completa-Immagini-Mancanti.ps1:
+// "${data}_${servizio}_Menù del Sito". Se manca, quel servizio non ha un menù reale confermato ed è
+// stato riempito con la cartolina generica "AL COMPLETO".
+function haMenuReale(menuData, dateStr, servizio) {
+  if (!menuData || !menuData.menu) return false;
+  return Object.prototype.hasOwnProperty.call(menuData.menu, `${dateStr}_${servizio}_Menù del Sito`);
+}
+
 // Grafica delle story (scritta ICCHESSIMANGIAOGGI? + colore della settimana + badge, vedi story-grafica.js).
 // Se il modulo o la sua dipendenza non sono disponibili (npm ci fallito), si ripiega sull'immagine semplice:
 // meglio una story senza header che nessuna story.
@@ -155,11 +181,11 @@ function loadStoryGrafica() {
 }
 
 // Compone la story di un servizio e la rende raggiungibile da Instagram. Qualunque errore → immagine semplice.
-async function prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, dbxToken }) {
+async function prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, prenota, dbxToken }) {
   if (!grafica || !logoBuf) return { url: plainUrl, composed: false };
   try {
     const menuBuf = await fetchBuffer(plainUrl);
-    const jpg = await grafica.composeStory({ menuBuf, logoBuf, color });
+    const jpg = await grafica.composeStory({ menuBuf, logoBuf, color, prenota });
     // Nome fisso per numero (02…15): i file si sovrascrivono ogni settimana, la cartella non cresce.
     const dbxPath = `${DROPBOX_STORY_FOLDER}/story-${num}.jpg`;
     await dropboxUploadBytes(dbxToken, dbxPath, jpg);
@@ -331,10 +357,16 @@ async function main() {
       console.warn(`⚠️ Logo non scaricabile (${err.message}) — userò i JPG del menù semplici.`);
     }
   }
+  // Un giorno/servizio senza menù reale confermato in menu-data.json è la cartolina generica "AL
+  // COMPLETO/FULLY BOOKED" (stessa fonte di verità di Completa-Immagini-Mancanti.ps1): in quel caso
+  // la story non deve invitare a prenotare un servizio già pieno.
+  const menuData = await fetchMenuDataOrNull();
   const prepared = {};
   for (const [label, num, plainUrl] of [['pranzo', info.pranzo, pranzoUrl], ['cena', info.cena, cenaUrl]]) {
     if (!daFare.includes(label)) continue;
-    prepared[label] = await prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, dbxToken });
+    const prenota = haMenuReale(menuData, oggi, label);
+    console.log(`${prenota ? '✅' : 'ℹ️'} Story ${label}: ${prenota ? 'menù reale confermato' : 'nessun menù confermato (probabile "al completo") — niente pillola "Prenota"'}`);
+    prepared[label] = await prepareStoryImage({ label, num, plainUrl, grafica, logoBuf, color, prenota, dbxToken });
   }
 
   if (DRY_RUN) {

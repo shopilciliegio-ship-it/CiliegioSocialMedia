@@ -113,10 +113,16 @@ function drawPrenota(ctx, cardBottom, color) {
 
 // Layout unico (variante "A" scelta da Luca): scritta a tutta larghezza sotto la zona coperta da IG,
 // cartolina del menù al centro, badge come sigillo sull'angolo in alto a destra della cartolina,
-// pillola "Prenota un tavolo · link in bio" sotto la cartolina.
+// pillola "Prenota un tavolo · link in bio" sotto la cartolina — SOLO se prenota=true (vedi sotto).
 // ATTENZIONE: la stessa geometria è replicata in CiliegioSocialMedia.html (disegnaStoryCanvas, usata per
 // l'anteprima nel calendario): se cambi qualcosa qui, cambia anche là.
-async function composeStory({ menuBuf, logoBuf, color }) {
+//
+// prenota=false: niente pillola e la cartolina usa tutto lo spazio verticale altrimenti tolto per farle
+// posto (PRENOTA_SPAZIO). Va passato false quando il giorno/servizio NON ha un menù reale confermato in
+// menu-data.json (quindi l'immagine è la cartolina generica "AL COMPLETO/FULLY BOOKED" copiata da
+// Completa-Immagini-Mancanti.ps1): invitare a prenotare un servizio già al completo non ha senso — è il
+// caso aperto di [[github_actions_cron_unreliable_external_timer]], chiuso il 22/9/2026.
+async function composeStory({ menuBuf, logoBuf, color, prenota = true }) {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   const [menu, logo] = await Promise.all([loadImage(menuBuf), loadImage(logoBuf)]);
@@ -129,9 +135,10 @@ async function composeStory({ menuBuf, logoBuf, color }) {
   const pad = 64;
   const fs = fitTitle(ctx, W - pad * 2);
   drawTitle(ctx, pad, SAFE_TOP + 50 + fs * 0.72, fs);
-  const card = drawCard(ctx, menu, 480, H - SAFE_BOTTOM - PRENOTA_SPAZIO);
+  const cardBottom = H - SAFE_BOTTOM - (prenota ? PRENOTA_SPAZIO : 0);
+  const card = drawCard(ctx, menu, 480, cardBottom);
   drawBadge(ctx, logo, card.x + card.w - 26, card.y + 24, 66, color);
-  drawPrenota(ctx, card.y + card.h, color);
+  if (prenota) drawPrenota(ctx, card.y + card.h, color);
   return canvas.toBuffer('image/jpeg', 92);
 }
 
