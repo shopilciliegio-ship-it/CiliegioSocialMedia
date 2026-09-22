@@ -94,7 +94,8 @@ export default {
         'Worker attivo.',
         `GITHUB_TOKEN: ${segreto(env.GITHUB_TOKEN) ? 'impostato' : 'MANCANTE'}`,
         `TEST_KEY: ${segreto(env.TEST_KEY) ? 'impostata' : 'MANCANTE'}`,
-        `Ora a Roma: ${r.weekday} ${r.hour}:${String(r.minute).padStart(2, '0')}`
+        `Ora a Roma: ${r.weekday} ${r.hour}:${String(r.minute).padStart(2, '0')}`,
+        `Job disponibili: ${Object.keys(JOBS).join(', ')}`
       ].join('\n') + '\n');
     }
     if (sezione !== 'test' || !segreto(env.TEST_KEY) || chiave !== segreto(env.TEST_KEY) || !JOBS[job]) return new Response('Not found', { status: 404 });
