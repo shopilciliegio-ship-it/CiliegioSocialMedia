@@ -4,11 +4,12 @@
 // alle 9:30). Un "Run workflow" (workflow_dispatch) invece parte subito. Questo Worker, che Cloudflare
 // esegue puntuale, lancia il workflow giusto all'ora giusta (Europe/Rome).
 //
-// Un solo cron trigger: "0,30 7,8 * * *" (UTC). Copre ora legale e solare; il Worker guarda l'ora vera di
-// Roma e lancia solo se è il momento giusto:
-//   - lunedì  9:00 Roma → pubblica-lunedi.yml   (post FB + IG del reminder)
-//   - ogni giorno 9:30 Roma → pubblica-stories.yml   (stories pranzo + cena)
-// L'altro dei due orari UTC (l'ora dell'altra stagione) viene ignorato.
+// Un solo cron trigger: "0,30 7,8,9 * * *" (UTC — va impostato così nel pannello Cloudflare, Triggers).
+// Copre ora legale e solare; il Worker guarda l'ora vera di Roma e lancia solo se è il momento giusto:
+//   - lunedì  9:00 Roma → pubblica-lunedi.yml           (post FB + IG del reminder)
+//   - ogni giorno 9:30 Roma → pubblica-stories.yml      (stories pranzo + cena)
+//   - ogni giorno 10:30 Roma → verifica-pubblicazione.yml (email di controllo a Luca)
+// Gli orari UTC dell'altra stagione (e i due slot 11:00/11:30 Roma che esistono solo d'estate) vengono ignorati.
 //
 // I workflow hanno comunque la finestra 9:00–11:00 e il controllo anti doppio invio: se questo timer e il cron
 // di riserva di GitHub partono entrambi, non si pubblica due volte.
@@ -26,9 +27,16 @@ const REPO  = 'CiliegioSocialMedia';
 const BRANCH = 'main';
 
 // Quando parte ciascun job, in ora di Roma. slot = 0 (allo scoccare dell'ora) o 30 (e mezza).
+// Ogni job dichiara i propri input di workflow_dispatch: GitHub rifiuta (422) input non definiti
+// nel workflow, quindi non si può mandare "dry_run" a verifica-pubblicazione.yml, che non ce l'ha
+// (ha "send_email" al suo posto — vedi verifica-pubblicazione.js).
 const JOBS = {
-  lunedi:  { workflow: 'pubblica-lunedi.yml',  quando: r => r.weekday === 'Mon' && r.hour === 9 && r.slot === 0 },
-  stories: { workflow: 'pubblica-stories.yml', quando: r => r.hour === 9 && r.slot === 30 },
+  lunedi:   { workflow: 'pubblica-lunedi.yml',        quando: r => r.weekday === 'Mon' && r.hour === 9  && r.slot === 0,
+              inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },
+  stories:  { workflow: 'pubblica-stories.yml',       quando: r => r.hour === 9  && r.slot === 30,
+              inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },
+  verifica: { workflow: 'verifica-pubblicazione.yml', quando: r => r.hour === 10 && r.slot === 30,
+              inputs: o => ({ send_email: String(!o.dry), force: String(o.force) }) },
 };
 
 function romeNow(date) {
@@ -43,7 +51,7 @@ function romeNow(date) {
 // Lancia il workflow. Errori nostri (token, permessi, nome file) → subito eccezione; errori di GitHub (5xx, 429) → 3 tentativi.
 async function dispatch(env, job, { dry = false, force = false } = {}) {
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${JOBS[job].workflow}/dispatches`;
-  const body = JSON.stringify({ ref: BRANCH, inputs: { dry_run: String(dry), force: String(force) } });
+  const body = JSON.stringify({ ref: BRANCH, inputs: JOBS[job].inputs({ dry, force }) });
   for (let tentativo = 1; tentativo <= 3; tentativo++) {
     const res = await fetch(url, {
       method: 'POST',

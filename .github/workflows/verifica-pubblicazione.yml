@@ -1,0 +1,42 @@
+name: Controllo pubblicazione giornaliero
+
+on:
+  schedule:
+    # RISERVA. Il trigger principale è il timer esterno (Cloudflare Worker, timer-cloudflare/worker.js)
+    # che lancia questo workflow via API (workflow_dispatch) alle 10:30 Europe/Rome: il cron di GitHub
+    # è "best effort" e in pratica parte con ore di ritardo (vedi pubblica-lunedi.yml/pubblica-stories.yml).
+    - cron: '13 8 * * *'  # 10:13 Europe/Rome con CEST (ora legale, UTC+2)
+    - cron: '13 9 * * *'  # 10:13 Europe/Rome con CET (ora solare, UTC+1)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Ignora il controllo orario (solo per test manuali)'
+        type: boolean
+        default: true
+      send_email:
+        description: 'Invia davvero la mail di controllo (disattiva per provare senza spedire)'
+        type: boolean
+        default: true
+
+# Un solo run alla volta: timer esterno e cron di riserva non devono mai girare in parallelo
+# (altrimenti Luca riceverebbe due email di controllo lo stesso giorno).
+concurrency:
+  group: verifica-pubblicazione
+  cancel-in-progress: false
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verifica pubblicazione e invia email di controllo
+        env:
+          DROPBOX_APP_KEY:       ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          BREVO_API_KEY:         ${{ secrets.BREVO_API_KEY }}
+          FORCE_RUN:  ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+          SEND_EMAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.send_email || 'true' }}
+        run: node verifica-pubblicazione.js
