@@ -1,12 +1,9 @@
 name: Controllo pubblicazione giornaliero
 
 on:
-  schedule:
-    # RISERVA. Il trigger principale è il timer esterno (Cloudflare Worker, timer-cloudflare/worker.js)
-    # che lancia questo workflow via API (workflow_dispatch) alle 10:30 Europe/Rome: il cron di GitHub
-    # è "best effort" e in pratica parte con ore di ritardo (vedi pubblica-lunedi.yml/pubblica-stories.yml).
-    - cron: '13 8 * * *'  # 10:13 Europe/Rome con CEST (ora legale, UTC+2)
-    - cron: '13 9 * * *'  # 10:13 Europe/Rome con CET (ora solare, UTC+1)
+  # Lanciato SOLO dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) via API ogni giorno alle 10:30 Europe/Rome,
+  # oppure a mano. Il cron `schedule` di GitHub è stato tolto il 23/9/2026: partiva con ore di ritardo
+  # e faceva solo run doppi. Se il timer si ferma, lanciare a mano da GitHub UI.
   workflow_dispatch:
     inputs:
       force:
@@ -18,7 +15,7 @@ on:
         type: boolean
         default: true
 
-# Un solo run alla volta: timer esterno e cron di riserva non devono mai girare in parallelo
+# Un solo run alla volta: timer esterno e lancio manuale non devono mai girare in parallelo
 # (altrimenti Luca riceverebbe due email di controllo lo stesso giorno).
 concurrency:
   group: verifica-pubblicazione
