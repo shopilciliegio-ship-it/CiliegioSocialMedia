@@ -17,6 +17,11 @@
 //     successivo (cron di riserva o manuale) rifà solo IG, senza ripubblicare FB. Quando entrambe sono
 //     uscite segna il post come "published" su piano.json.
 //
+// Modalità VENERDÌ (TIPO_POST=venerdi, workflow pubblica-venerdi.yml, dal 25/9/2026): stesso flusso, ma il
+// post del giorno sta in venerdi.json su Dropbox ({posts: {"YYYY-MM-DD": {status, photoFile, fbText,
+// igText, tema}}}), NON in piano.json: CSM riscrive piano.json solo con i post che genera lei (i lunedì)
+// e cancellerebbe quelli del venerdì. Finestra 11:00–12:59; id nel registro post-log.json "v_YYYY-MM-DD_venerdi".
+//
 // Nessuna dipendenza npm: usa fetch/FormData/Blob globali di Node 20+.
 
 const { getIgToken } = require('./ig-token');
@@ -37,6 +42,8 @@ const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
 // Solo per recuperi manuali: "Facebook è già uscito (a mano o in un run finito male), non rifarlo".
 const FB_GIA_PUBBLICATO = String(process.env.FB_GIA_PUBBLICATO || 'false').toLowerCase() === 'true';
+const TIPO_POST = String(process.env.TIPO_POST || 'lunedi').toLowerCase() === 'venerdi' ? 'venerdi' : 'lunedi';
+const DROPBOX_VENERDI_PATH = '/IlCiliegio/SocialMedia/venerdi.json';
 
 function need(name) {
   const raw = process.env[name];
@@ -184,6 +191,11 @@ function pickReminderId(overrides, monday) {
   return ok || candidates.find(id => overrides[id]) || candidates[0];
 }
 
+// Oggi in Europe/Rome come 'YYYY-MM-DD'.
+function todayRome() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 function romeWeekday() {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', weekday: 'short' }).format(new Date());
 }
@@ -257,6 +269,7 @@ async function igPublishFeed(igUserId, igToken, imageUrl, caption) {
 }
 
 async function main() {
+  if (TIPO_POST === 'venerdi') return mainVenerdi();
   if (!FORCE_RUN) {
     const weekday = romeWeekday();
     if (weekday !== 'Mon') {
@@ -309,6 +322,12 @@ async function main() {
     return;
   }
 
+  return pubblicaPost(dbxToken, postId, post, () => segnaPubblicatoSuPiano(dbxToken, postId, post));
+}
+
+// Pubblicazione vera e propria (FB foto pulita + IG grafica o foto), comune a lunedì e venerdì.
+// segnaPubblicato(): cosa scrivere quando entrambe le piattaforme sono uscite.
+async function pubblicaPost(dbxToken, postId, post, segnaPubblicato) {
   const usaFotoSemplicePerIG = !post.graphicFile;
   console.log(`✅ Post approvato trovato.`);
   console.log(`   Foto FB: ${post.photoFile}`);
@@ -333,7 +352,7 @@ async function main() {
 
   if (fbFatto && igFatto) {
     console.log('ℹ️ Entrambe le piattaforme risultano già pubblicate: allineo solo piano.json.');
-    if (!DRY_RUN) await segnaPubblicatoSuPiano(dbxToken, postId, post);
+    if (!DRY_RUN) await segnaPubblicato();
     return;
   }
 
@@ -388,7 +407,54 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  await segnaPubblicatoSuPiano(dbxToken, postId, post);
+  await segnaPubblicato();
+}
+
+// Post del venerdì (venerdi.json su Dropbox, chiave = data del giorno).
+async function mainVenerdi() {
+  if (!FORCE_RUN) {
+    const weekday = romeWeekday();
+    if (weekday !== 'Fri') {
+      console.log(`ℹ️ Oggi non è venerdì a Europe/Rome (${weekday}) — nessuna azione.`);
+      return;
+    }
+    const hour = romeHour();
+    if (hour < 11 || hour >= 13) {
+      console.log(`ℹ️ Fuori dalla finestra 11:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
+      return;
+    }
+  } else {
+    console.log('⚠️ FORCE_RUN attivo: salto il controllo giorno/ora (solo per test manuali).');
+  }
+  const oggi = String(process.env.DATA_POST || '').trim() || todayRome();
+  const postId = `v_${oggi}_venerdi`;
+  console.log(`📅 Post del venerdì: ${oggi} (id registro "${postId}")`);
+
+  const dbxToken = await dropboxAccessToken();
+  const venerdi = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_VENERDI_PATH)) || {};
+  const post = (venerdi.posts || {})[oggi];
+  if (!post) { console.log(`⚠️ Nessun post del venerdì per ${oggi} in venerdi.json — nessuna azione.`); return; }
+  if (post.status === 'published') { console.log(`ℹ️ Post del ${oggi} già pubblicato — nessuna azione.`); return; }
+  if (post.status !== 'approvato') {
+    console.log(`⚠️ Post del ${oggi} non approvato (stato: "${post.status}") — nessuna azione.`);
+    return;
+  }
+  if (!post.photoFile || !post.fbText || !post.igText) {
+    console.error(`❌ Post del ${oggi} approvato ma mancano foto o testi — serve un controllo.`);
+    process.exitCode = 1;
+    return;
+  }
+  // La foto deve esistere davvero su Dropbox: meglio fermarsi qui che far fallire FB e IG a metà.
+  try { await dropboxTempLink(dbxToken, post.photoFile); }
+  catch (err) { console.error(`❌ Foto non trovata su Dropbox (${post.photoFile}): ${err.message}`); process.exitCode = 1; return; }
+
+  return pubblicaPost(dbxToken, postId, post, async () => {
+    const v = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_VENERDI_PATH)) || {};
+    v.posts = v.posts || {};
+    v.posts[oggi] = { ...(v.posts[oggi] || post), status: 'published', publishedAt: new Date().toISOString() };
+    await dropboxUploadJson(dbxToken, DROPBOX_VENERDI_PATH, v);
+    console.log("💾 venerdi.json aggiornato su Dropbox (status: published).");
+  });
 }
 
 // Scrive l'esito di una piattaforma in post-log.json. Rilegge il file ogni volta (nessuno stato in memoria).

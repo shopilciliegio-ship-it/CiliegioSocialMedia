@@ -1,0 +1,50 @@
+name: Pubblica social del venerdì
+
+on:
+  # Lanciato dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) il venerdì alle 11:00 Europe/Rome,
+  # oppure a mano ("Run workflow"). Il post del giorno sta in venerdi.json su Dropbox (vedi pubblica-social.js).
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Test a secco: logga cosa pubblicherebbe, senza toccare Facebook/Instagram'
+        type: boolean
+        default: true
+      force:
+        description: 'Ignora il controllo giorno/ora (solo per test manuali)'
+        type: boolean
+        default: true
+      fb_gia_pubblicato:
+        description: 'Recupero: Facebook è già uscito (es. run finito male), non rifarlo e pubblica solo quel che manca'
+        type: boolean
+        default: false
+      data_post:
+        description: 'Solo per test: data del post in venerdi.json (YYYY-MM-DD). Vuoto = oggi'
+        type: string
+        default: ''
+
+concurrency:
+  group: pubblica-venerdi
+  cancel-in-progress: false
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Pubblica il post del venerdì
+        env:
+          TIPO_POST: venerdi
+          DROPBOX_APP_KEY:        ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_REFRESH_TOKEN:  ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          FB_PAGE_ID:              ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN:   ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          IG_USER_ID:              ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN:        ${{ secrets.IG_ACCESS_TOKEN }}
+          DRY_RUN:   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+          FB_GIA_PUBBLICATO: ${{ github.event_name == 'workflow_dispatch' && inputs.fb_gia_pubblicato || 'false' }}
+          DATA_POST: ${{ inputs.data_post }}
+        run: node pubblica-social.js
