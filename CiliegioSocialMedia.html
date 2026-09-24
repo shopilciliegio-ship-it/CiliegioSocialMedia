@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.24.1',
+    date: '2026-09-24',
+    current: true,
+    description: 'Riscrivi con AI: l esito resta scritto nel riquadro (prima era un avviso di 3 secondi, facile da perdere), a bozza pronta la finestra scorre ai campi Facebook e Instagram e li evidenzia, e la risposta dell AI viene letta anche se contiene testo attorno al JSON. Gli errori (chiave, credito, risposta troncata) sono spiegati per esteso.'
+  },
+  {
     version: '2.24.0',
     date: '2026-09-21',
-    current: true,
+    current: false,
     description: 'Story del giorno: sotto la cartolina del menu compare la pillola Prenota un tavolo, link in bio (bozza B scelta da Luca). Le story da API non possono avere lo sticker link, quindi la scritta rimanda al link Prenota un tavolo che sta nella bio del profilo. La cartolina si riduce di circa il 10% per far posto alla pillola. Cambiata sia la grafica composta dalla GitHub Action (story-grafica.js) sia l anteprima nel calendario, che restano identiche.'
   },
   {
@@ -2231,13 +2237,19 @@ async function callClaude(prompt, maxTokens = 1500) {
   const data = await response.json();
   if (!response.ok) {
     const msg = data.error?.message || data.error_summary || `HTTP ${response.status}`;
-    throw new Error(`API Claude: ${msg}`);
+    const spiega = response.status === 401 ? ' — la chiave non è valida: clicca "cambia" in fondo al riquadro e incollala di nuovo'
+                 : /credit|balance|billing/i.test(msg) ? ' — sul conto Anthropic non c’è credito: ricaricalo da console.anthropic.com → Billing'
+                 : response.status === 404 ? ' — modello non disponibile per questa chiave'
+                 : response.status === 429 || response.status === 529 ? ' — servizio occupato, riprova tra un minuto' : '';
+    throw new Error(`API Claude (${response.status}): ${msg}${spiega}`);
   }
-  const raw   = data.content?.[0]?.text || '';
-  const clean = raw.replace(/```json[\s\S]*?```|```/g, s => s.startsWith('```json') ? s.slice(7, -3) : '').trim()
-             || raw.trim();
-  if (!clean) throw new Error('Risposta AI vuota — riprova');
-  return JSON.parse(clean);
+  const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('') || '';
+  if (data.stop_reason === 'max_tokens') throw new Error('La risposta dell’AI è stata troncata (troppo lunga) — riprova con una richiesta più breve');
+  // Prende l'oggetto JSON anche se il modello ci ha messo testo o ```json attorno.
+  const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('Risposta AI senza JSON — riprova');
+  try { return JSON.parse(raw.slice(a, b + 1)); }
+  catch (e) { throw new Error('Risposta AI non leggibile (' + e.message + ') — riprova'); }
 }
 
 /* ═══════════════════════════════════════════════
@@ -2528,6 +2540,7 @@ function renderAiBox(id) {
         <button class="btn sm" id="ai-undo" style="display:none" onclick="ripristinaTestiAI()">↩ Ripristina testo precedente</button>
       </div>
       <div style="font-size:11px; color:var(--text3); margin-top:6px; line-height:1.5">La bozza compila i due campi qui sotto: controllala, modificala, poi <strong>Salva modifiche</strong>. L'anteprima in alto si aggiorna dopo il salvataggio. Non esce nulla su FB/IG senza "Approva questa settimana".</div>
+      <div id="ai-status" style="display:none; margin-top:8px; font-size:13px; line-height:1.5; padding:8px 10px; border-radius:8px"></div>
       <div id="ai-key-row" style="margin-top:8px">${renderAiKeyRow()}</div>
     </div>
   </details>`;
@@ -2621,6 +2634,16 @@ function assemblaTestiReminder(r) {
 }
 
 let _aiPrevTesti = null;
+// Esito di "Genera bozza" scritto nel riquadro e lasciato lì (non un avviso che sparisce).
+function aiStatus(msg, tipo) {
+  const el = document.getElementById('ai-status');
+  if (!el) return;
+  const col = { ok: 'var(--green, #2e7d32)', err: 'var(--red, #c62828)', wait: 'var(--text2)' }[tipo] || 'var(--text2)';
+  el.style.display = msg ? '' : 'none';
+  el.style.border = `1px solid ${col}`;
+  el.style.color = col;
+  el.textContent = msg || '';
+}
 async function generaTestiAI(id) {
   const found = findPostById(id);
   if (!found) return;
@@ -2629,6 +2652,7 @@ async function generaTestiAI(id) {
   if (!getAnthropicKey()) { showToast('⚠️ Inserisci prima la chiave API (in fondo al riquadro)'); return; }
   const btn = document.getElementById('ai-btn');
   btn.disabled = true; btn.textContent = '⏳ Sto scrivendo...';
+  aiStatus('⏳ Sto scrivendo la bozza: di solito 10-30 secondi…', 'wait');
   try {
     const risposta = await callClaude(promptReminderAI(found.post, brief), 2500);
     const testi = assemblaTestiReminder(risposta);
@@ -2637,9 +2661,14 @@ async function generaTestiAI(id) {
     document.getElementById('pd-ig').value = testi.ig;
     document.getElementById('ai-undo').style.display = '';
     aggiornaAvvisiTesti();
+    aiStatus('✅ Bozza scritta nei campi Facebook e Instagram qui sotto (evidenziati). L’anteprima in alto si aggiorna dopo "Salva modifiche".', 'ok');
+    const fbEl = document.getElementById('pd-fb'), igEl = document.getElementById('pd-ig');
+    fbEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    [fbEl, igEl].forEach(el => { el.style.outline = '3px solid var(--green, #2e7d32)'; setTimeout(() => { el.style.outline = ''; }, 4000); });
     showToast('✅ Bozza pronta: controllala, poi "Salva modifiche"');
   } catch (err) {
     console.error(err);
+    aiStatus('❌ Bozza non generata: ' + err.message, 'err');
     showToast('❌ ' + err.message);
   } finally {
     btn.disabled = false; btn.textContent = '✨ Genera bozza';
