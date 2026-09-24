@@ -48,6 +48,9 @@ const LOGO_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Cilie
 
 const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
+// Lancio manuale "rifai": ripubblica solo quella story (pranzo/cena) ignorando il registro di oggi,
+// per quando è stata cancellata a mano da Instagram (es. menù sbagliato, poi corretto su GitHub).
+const RIFAI = ['pranzo', 'cena'].includes(String(process.env.RIFAI || '').toLowerCase()) ? String(process.env.RIFAI).toLowerCase() : null;
 
 function need(name) {
   const raw = process.env[name];
@@ -333,8 +336,9 @@ async function main() {
   const oggi = romeDateStr();
   const logIniziale = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
   const giaFatte = (logIniziale.stories || {})[oggi] || {};
-  const daFare = ['pranzo', 'cena'].filter(label => !(giaFatte[label] && giaFatte[label].ok));
-  for (const label of ['pranzo', 'cena']) {
+  const daFare = RIFAI ? [RIFAI] : ['pranzo', 'cena'].filter(label => !(giaFatte[label] && giaFatte[label].ok));
+  if (RIFAI) console.log(`🔁 RIFAI attivo: ripubblico solo la story ${RIFAI}, ignorando il registro di oggi.`);
+  else for (const label of ['pranzo', 'cena']) {
     if (!daFare.includes(label)) console.log(`ℹ️ Story ${label} già pubblicata oggi (${giaFatte[label].at}) — la salto.`);
   }
   if (!daFare.length) {

@@ -14,6 +14,11 @@ on:
         description: 'Ignora il controllo orario (solo per test manuali)'
         type: boolean
         default: true
+      rifai:
+        description: 'Ripubblica SOLO questa story anche se oggi risulta già uscita (es. cancellata a mano da Instagram per correggerla)'
+        type: choice
+        options: [nessuna, pranzo, cena]
+        default: nessuna
 
 # Un solo run alla volta: timer esterno e lancio manuale non devono mai girare in parallelo
 # (altrimenti entrambi vedrebbero "story non ancora pubblicata" e la pubblicherebbero due volte).
@@ -43,4 +48,5 @@ jobs:
           # Cron (produzione): pubblica davvero. workflow_dispatch: rispetta l'input scelto.
           DRY_RUN:   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+          RIFAI:     ${{ github.event_name == 'workflow_dispatch' && inputs.rifai || 'nessuna' }}
         run: node pubblica-stories.js
