@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.1',
+    version: '2.24.2',
     date: '2026-09-24',
     current: true,
+    description: 'Nel blocco link dei post Facebook il WhatsApp ora e https://wa.me/... : senza https Facebook poteva non renderlo cliccabile. Si aggiorna da solo anche nei testi gia salvati e non ancora pubblicati.'
+  },
+  {
+    version: '2.24.1',
+    date: '2026-09-24',
+    current: false,
     description: 'Riscrivi con AI: l esito resta scritto nel riquadro (prima era un avviso di 3 secondi, facile da perdere), a bozza pronta la finestra scorre ai campi Facebook e Instagram e li evidenzia, e la risposta dell AI viene letta anche se contiene testo attorno al JSON. Gli errori (chiave, credito, risposta troncata) sono spiegati per esteso.'
   },
   {
@@ -1244,7 +1250,7 @@ function fbBloccoTesto() {
   return [
     `📅 Prenota il tavolo: ${LINK_PRENOTA}`,
     `🍷 Shop online: ${LINK_SHOP}`,
-    `💬 Per parlare con il ristorante, WhatsApp → ${WHATSAPP_RISTORANTE}`
+    `💬 Per parlare con il ristorante, WhatsApp → https://${WHATSAPP_RISTORANTE}`
   ].join('\n');
 }
 
