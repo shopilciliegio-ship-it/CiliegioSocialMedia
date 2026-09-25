@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.24.3',
+    date: '2026-09-25',
+    current: true,
+    description: 'Piatti del mese rivisti con Luca: agosto pici all\'aglione (spostati da settembre, pomodori e aglione di stagione), settembre schiacciata con l\'uva (il dolce della vendemmia), ottobre pappardelle al cinghiale (spostate da agosto, stagione di caccia). Tolti i crostini neri col vino novello di ottobre: il novello non lo produciamo.'
+  },
+  {
     version: '2.24.2',
     date: '2026-09-24',
-    current: true,
+    current: false,
     description: 'Nel blocco link dei post Facebook il WhatsApp ora e https://wa.me/... : senza https Facebook poteva non renderlo cliccabile. Si aggiorna da solo anche nei testi gia salvati e non ancora pubblicati.'
   },
   {
@@ -1046,14 +1052,14 @@ const PIATTO_PLAN = {
   7:  { title: 'Pappa al pomodoro',
         desc: 'I pomodori maturi dell\'orto del Ciliegio, pane di farro raffermo, aglio, basilico e olio EVO: la pappa al pomodoro è il manifesto dell\'estate toscana — semplice, genuina e irresistibile',
         pillar: 'ristorante' },
-  8:  { title: 'Pappardelle al cinghiale',
-        desc: 'Selvaggina locale brasata lentamente con il nostro Chianti rosso, aromi di macchia e verdure di stagione, a condire pappardelle di pasta fresca tirata a mano — l\'abbinamento classico della cucina di caccia toscana, il piatto forte dell\'agriturismo d\'agosto',
+  8:  { title: 'Pici all\'aglione',
+        desc: 'Pasta fresca tirata a mano con la salsa di pomodoro e aglio di Valdichiana: ad agosto i pomodori sono al massimo e l\'aglione, meno pungente dell\'aglio comune, è appena raccolto — un sugo profumato e avvolgente, da abbinare al Sangiovese del Ciliegio',
         pillar: 'ristorante' },
-  9:  { title: 'Pici all\'aglione',
-        desc: 'Pasta fresca tirata a mano con la salsa di pomodoro e aglio di Valdichiana: l\'aglione è meno pungente dell\'aglio comune e regala un sugo profumato e avvolgente, da abbinare al Sangiovese del Ciliegio',
+  9:  { title: 'Schiacciata con l\'uva',
+        desc: 'Il dolce della vendemmia: pasta di pane, uva nera da vino con i suoi chicchi, zucchero e un filo d\'olio, cotta finché l\'uva non scoppia e diventa sciroppo — si fa solo in questi giorni, quando i grappoli arrivano dai filari',
         pillar: 'ristorante' },
-  10: { title: 'Crostini neri di fegatini con vino novello',
-        desc: 'L\'antipasto toscano d\'autunno per eccellenza: fegatini di pollo trifolati con cipolla, capperi e acciughe su pane toscano tostato — da abbinare al vino novello appena uscito dalla cantina del Ciliegio',
+  10: { title: 'Pappardelle al cinghiale',
+        desc: 'Con l\'autunno si apre la stagione della caccia: selvaggina locale brasata lentamente con il nostro Chianti rosso, aromi di macchia e verdure, a condire pappardelle di pasta fresca tirata a mano — il classico della cucina di caccia toscana',
         pillar: 'ristorante' },
   11: { title: 'Bistecca alla Fiorentina con fagioli all\'uccelletto',
         desc: 'Il grande piatto toscano: bistecca di Chianina (o locale) su brace viva, con i nostri fagioli borlotti all\'uccelletto con salvia e olio EVO — abbinamento con il Chianti Colli Senesi del Ciliegio',
