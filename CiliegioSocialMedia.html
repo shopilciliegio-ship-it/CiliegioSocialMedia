@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.7',
+    version: '2.24.8',
     date: '2026-09-28',
     current: true,
+    description: 'Blocco link dei post Facebook: sostituite le 3 righe separate (Prenota il tavolo, Shop online, WhatsApp) con un link unico alla nuova pagina fatta da Passepartout (ilciliegio.com/it/link), che le raccoglie tutte insieme a telefono e ristorante. Si aggiorna da solo anche nei testi già salvati e non ancora pubblicati (LINK_UTILI nel codice). Da fare a mano: aggiornare il link in bio di Instagram con lo stesso indirizzo, al posto dei tre link separati attuali.'
+  },
+  {
+    version: '2.24.7',
+    date: '2026-09-28',
+    current: false,
     description: 'Fix importante: le settimane future del reminder (mai aperte/approvate da Luca) non mostravano i testi aggiornati del codice (es. la condensazione hashtag di oggi) perché extractRecurringOverrides() considerava "modificato" qualsiasi reminder con stato diverso da bozza — e lo stato di partenza di OGNI reminder è \'ready\' (automatico, non un\'azione di Luca). Il primo salvataggio dopo aver aperto il calendario congelava così in Dropbox/localStorage il testo di TUTTE le settimane fino al 2028, comprese quelle mai toccate. Ora un reminder viene salvato come "modificato" solo se è stato davvero approvato/pubblicato o se la foto è stata scelta a mano. Per pulire i dati già congelati: aprire Impostazioni e cliccare "💾 Salva impostazioni" una volta (su ogni dispositivo/browser usato) — risalva tutto con la logica corretta.'
   },
   {
@@ -1264,34 +1270,28 @@ function igLinkInBio(text) {
   return t;
 }
 
-// Link fissi dei post del lunedì. Facebook: nel testo (cliccabili). Instagram: nel link in bio del profilo,
-// impostato a mano con tre link in quest'ordine → "Prenota un tavolo" (LINK_PRENOTA), "Menù della settimana"
-// (ilciliegio.com/it/ristorante), "Shop online" (LINK_SHOP).
-// LINK_PRENOTA è una pagina del sito con redirect 301 a Google Prenotazioni
-// (https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?hl=it-IT): se un giorno cambia la destinazione si
-// cambia lì, non nei post. Cambiando questo valore fbBloccoLink() riscrive il blocco anche nei testi già
-// salvati (non ancora pubblicati).
-const LINK_PRENOTA = 'https://www.ilciliegio.com/prenota';
-const LINK_SHOP    = 'https://wineclub.sienawine.it/';
+// Link fissi dei post del lunedì. Dal 28/9 Passepartout ha pubblicato una pagina unica con
+// tutti i link utili (prenotazioni, WhatsApp, shop, ristorante): LINK_UTILI la sostituisce sia
+// nel blocco Facebook (cliccabile nel testo) sia nel link in bio di Instagram (da impostare a
+// mano nel profilo — non è gestito da questo codice). Cambiando LINK_UTILI, fbBloccoLink()
+// riscrive il blocco anche nei testi già salvati (non ancora pubblicati).
+const LINK_UTILI = 'https://www.ilciliegio.com/it/link';
 const WHATSAPP_RISTORANTE = 'wa.me/393291767348';
 
-// Le tre righe di link del blocco Facebook (usate anche dalla riscrittura AI).
+// Riga di link del blocco Facebook (usata anche dalla riscrittura AI).
 function fbBloccoTesto() {
-  return [
-    `📅 Prenota il tavolo: ${LINK_PRENOTA}`,
-    `🍷 Shop online: ${LINK_SHOP}`,
-    `💬 Per parlare con il ristorante, WhatsApp → https://${WHATSAPP_RISTORANTE}`
-  ].join('\n');
+  return `🔗 Tutti i link utili → ${LINK_UTILI}`;
 }
 
-// Blocco di link in fondo al testo Facebook, prima degli hashtag. Sostituisce la vecchia riga fissa
-// "Prenota su WhatsApp → … oppure sul sito, cliccando su "Prenota" 👉 www.ilciliegio.com" (la frase d'invito
-// sopra, diversa in ogni post, resta). Idempotente: se il blocco c'è già lo riscrive con i link attuali.
+// Blocco di link in fondo al testo Facebook, prima degli hashtag. Idempotente: se il blocco
+// c'è già (in qualunque versione precedente) lo riscrive con il link attuale.
 function fbBloccoLink(text) {
   if (!text) return text;
   const blocco = fbBloccoTesto();
-  const giaBlocco = /^📅 Prenota il tavolo:.*\n🍷 Shop online:.*\n💬 Per parlare con il ristorante.*$/m;
+  const giaBlocco = /^🔗 Tutti i link utili →.*$/m;
   if (giaBlocco.test(text)) return text.replace(giaBlocco, () => blocco);
+  const vecchioBlocco3 = /^📅 Prenota il tavolo:.*\n🍷 Shop online:.*\n💬 Per parlare con il ristorante.*$/m;
+  if (vecchioBlocco3.test(text)) return text.replace(vecchioBlocco3, () => blocco);
   const vecchiaCta = /^Prenota su WhatsApp → wa\.me\/393291767348 oppure sul sito, cliccando su "Prenota" 👉 www\.ilciliegio\.com$/m;
   if (vecchiaCta.test(text)) return text.replace(vecchiaCta, () => blocco);
   // CTA modificata a mano: il blocco va comunque prima degli hashtag (o in coda).
