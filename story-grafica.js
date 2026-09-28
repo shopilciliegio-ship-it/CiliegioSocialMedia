@@ -1,7 +1,7 @@
 // story-grafica.js
 //
 // Compone l'immagine di una IG Story (1080×1920, formato 9:16): sfondo nel colore della
-// settimana, scritta fissa "ICCHESSIMANGIAOGGI?" in Titan One (stesso font di "OVVIA MIMMI!"),
+// settimana, scritta fissa "ICCHESSIMANGIAOGGI?" in Titan One (stesso font di "CIAO MIMMI!"),
 // il menù del giorno come "cartolina" e il badge tondo con lo stemma del Ciliegio.
 //
 // Stesso stile della grafica del post del lunedì (disegnaGraficaIG in CiliegioSocialMedia.html):
