@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.5',
+    version: '2.24.6',
     date: '2026-09-28',
     current: true,
+    description: 'Fix anteprima story in CSM: mostrava sempre la pillola "Prenota un tavolo · link in bio" anche nei giorni "al completo" (dove non ha senso), perché disegnaStoryCanvas() non aveva mai ricevuto il fix del 22/9 fatto solo nella Action reale (story-grafica.js) — le due composizioni sono due copie separate, una in ognuno dei due file, e bisogna aggiornarle insieme. Ora l\'anteprima controlla anche lei menu-data.json (stessa chiave "data_servizio_Menù del Sito" usata dalla Action) prima di disegnare la pillola: quello che si vede in CSM ora corrisponde davvero a quello che esce alle 9:30.'
+  },
+  {
+    version: '2.24.5',
+    date: '2026-09-28',
+    current: false,
     description: 'I 55 testi pre-scritti del reminder del lunedì riscritti: condensati in un solo paragrafo di corpo (prima erano due, più lunghi), hashtag ridotti da 5 a 4 su Facebook e da 15-20 a 8 su Instagram, e tolte le frasi che parlavano di allevamento/salumi/formaggi come prodotti propri e di spedizioni/consegne a domicilio/shop (l\'azienda non ha allevamento né vende salumi o formaggi, e questi testi non seguivano ancora le regole già in vigore per "Riscrivi con AI"). Struttura tecnica (saluto, link, CTA, frase "menù online") invariata: l\'automazione che inserisce i link a runtime continua a funzionare.'
   },
   {
@@ -1931,6 +1937,31 @@ const STORY_SAFE_TOP = 250, STORY_SAFE_BOTTOM = 300;
 // Pillola "Prenota un tavolo · link in bio" sotto la cartolina (vedi PRENOTA_TESTO in story-grafica.js).
 const STORY_PRENOTA_TESTO = 'PRENOTA UN TAVOLO · LINK IN BIO', STORY_PRENOTA_SPAZIO = 120;
 
+// Stessa fonte di verità del publish reale (haMenuReale in pubblica-stories.js): se manca la chiave
+// "${data}_${servizio}_Menù del Sito" in menu-data.json, quel servizio non ha un menù reale confermato
+// (probabile "al completo") e l'anteprima non deve mostrare la pillola "Prenota" — altrimenti l'anteprima
+// mente rispetto a quello che la GitHub Action pubblica davvero. Fail-closed come nella Action: se il file
+// non si scarica, niente pillola (meglio un'anteprima senza che una sbagliata).
+const MENU_DATA_URL_CSM = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/menu-data.json';
+let _menuDataCacheCSM = null;
+async function fetchMenuDataCSM() {
+  if (_menuDataCacheCSM) return _menuDataCacheCSM;
+  try {
+    const res = await fetch(MENU_DATA_URL_CSM);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    _menuDataCacheCSM = await res.json();
+  } catch (err) {
+    console.warn(`menu-data.json non scaricabile per l'anteprima story (${err.message}) — niente pillola "Prenota".`);
+    _menuDataCacheCSM = null;
+  }
+  return _menuDataCacheCSM;
+}
+async function haMenuRealeCSM(dateStr, servizio) {
+  const menuData = await fetchMenuDataCSM();
+  if (!menuData || !menuData.menu) return false;
+  return Object.prototype.hasOwnProperty.call(menuData.menu, `${dateStr}_${servizio}_Menù del Sito`);
+}
+
 function _storyRoundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -1941,7 +1972,7 @@ function _storyRoundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-async function disegnaStoryCanvas(menu, logo, colore) {
+async function disegnaStoryCanvas(menu, logo, colore, prenota = true) {
   await document.fonts.load('96px "Titan One"'); // vedi nota in disegnaGraficaIG: senza attesa il canvas usa il font di sistema
   await document.fonts.ready;
   const canvas = document.createElement('canvas');
@@ -1964,7 +1995,7 @@ async function disegnaStoryCanvas(menu, logo, colore) {
   ctx.fillStyle = '#FFF3DC'; ctx.fillText(STORY_TITOLO, pad, ty);
 
   // Cartolina del menù
-  const top = 480, bottom = STORY_H - STORY_SAFE_BOTTOM - STORY_PRENOTA_SPAZIO;
+  const top = 480, bottom = STORY_H - STORY_SAFE_BOTTOM - (prenota ? STORY_PRENOTA_SPAZIO : 0);
   const ch = bottom - top, cw = ch * menu.width / menu.height, cx0 = (STORY_W - cw) / 2;
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
@@ -1993,8 +2024,9 @@ async function disegnaStoryCanvas(menu, logo, colore) {
     ctx.lineWidth = 6; ctx.strokeStyle = '#FFF3DC'; ctx.stroke();
   }
 
-  // Pillola crema con il testo nel colore della settimana, centrata sotto la cartolina
-  {
+  // Pillola crema con il testo nel colore della settimana, centrata sotto la cartolina — solo se il
+  // servizio ha un menù reale confermato (vedi haMenuRealeCSM sopra).
+  if (prenota) {
     const ph = 74, py = bottom + 34, pf = 38;
     ctx.font = `${pf}px "Titan One", sans-serif`;
     const pw = ctx.measureText(STORY_PRENOTA_TESTO).width + ph * 0.9, px = (STORY_W - pw) / 2;
@@ -2010,7 +2042,7 @@ async function disegnaStoryCanvas(menu, logo, colore) {
 
 // Disegna le due anteprime dentro i contenitori già presenti nel modale. Se qualcosa non va (rete, CORS),
 // ripiega sull'immagine semplice del menù, meglio di un riquadro vuoto.
-async function montaAnteprimaStory(containerId, menuUrl, colore) {
+async function montaAnteprimaStory(containerId, menuUrl, colore, prenota = true) {
   const el = document.getElementById(containerId);
   if (!el) return;
   try {
@@ -2020,7 +2052,7 @@ async function montaAnteprimaStory(containerId, menuUrl, colore) {
       im.src = menuUrl;
     });
     const logo = await _loadIgLogo();
-    const canvas = await disegnaStoryCanvas(menu, logo, colore);
+    const canvas = await disegnaStoryCanvas(menu, logo, colore, prenota);
     if (!document.getElementById(containerId)) return; // modale chiuso nel frattempo
     el.innerHTML = ''; el.appendChild(canvas);
   } catch (err) {
@@ -2086,8 +2118,8 @@ function openStoryDetail(p) {
     <div style="font-size:12px; color:var(--text3)">Le story non hanno testo da scrivere: la scritta è fissa e il menù è quello del giorno. Non si modificano da qui.</div>
   `);
   if (si.previewable) {
-    montaAnteprimaStory('story-prev-pranzo', si.urls.pranzo, si.color);
-    montaAnteprimaStory('story-prev-cena', si.urls.cena, si.color);
+    haMenuRealeCSM(p.storyDate, 'pranzo').then(pr => montaAnteprimaStory('story-prev-pranzo', si.urls.pranzo, si.color, pr));
+    haMenuRealeCSM(p.storyDate, 'cena').then(pr => montaAnteprimaStory('story-prev-cena', si.urls.cena, si.color, pr));
   }
 }
 
