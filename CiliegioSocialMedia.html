@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.6',
+    version: '2.24.7',
     date: '2026-09-28',
     current: true,
+    description: 'Fix importante: le settimane future del reminder (mai aperte/approvate da Luca) non mostravano i testi aggiornati del codice (es. la condensazione hashtag di oggi) perché extractRecurringOverrides() considerava "modificato" qualsiasi reminder con stato diverso da bozza — e lo stato di partenza di OGNI reminder è \'ready\' (automatico, non un\'azione di Luca). Il primo salvataggio dopo aver aperto il calendario congelava così in Dropbox/localStorage il testo di TUTTE le settimane fino al 2028, comprese quelle mai toccate. Ora un reminder viene salvato come "modificato" solo se è stato davvero approvato/pubblicato o se la foto è stata scelta a mano. Per pulire i dati già congelati: aprire Impostazioni e cliccare "💾 Salva impostazioni" una volta (su ogni dispositivo/browser usato) — risalva tutto con la logica corretta.'
+  },
+  {
+    version: '2.24.6',
+    date: '2026-09-28',
+    current: false,
     description: 'Fix anteprima story in CSM: mostrava sempre la pillola "Prenota un tavolo · link in bio" anche nei giorni "al completo" (dove non ha senso), perché disegnaStoryCanvas() non aveva mai ricevuto il fix del 22/9 fatto solo nella Action reale (story-grafica.js) — le due composizioni sono due copie separate, una in ognuno dei due file, e bisogna aggiornarle insieme. Ora l\'anteprima controlla anche lei menu-data.json (stessa chiave "data_servizio_Menù del Sito" usata dalla Action) prima di disegnare la pillola: quello che si vede in CSM ora corrisponde davvero a quello che esce alle 9:30.'
   },
   {
@@ -1506,10 +1512,25 @@ function removeLegacyPlaceholders() {
 
 // Estrae solo i campi modificati dall'utente nei post ricorrenti (testi AI, status).
 // La struttura (date, titoli) viene sempre rigenerata dal codice — non va salvata.
+//
+// ATTENZIONE (bug corretto il 28/9/2026): per i reminder del lunedì lo stato di partenza è
+// SEMPRE 'ready' (assegnato dal codice a ogni settimana generata, anche quelle mai aperte —
+// vedi makeRecurringPost), non un'azione di Luca. Prima di questo fix, "status !== 'draft'"
+// bastava a considerare "modificato" QUALSIASI reminder mai renderizzato: il primo autoSync()
+// dopo l'apertura del calendario (es. ogni "✅ Approva questa settimana") congelava in
+// Dropbox/localStorage il testo di TUTTE le settimane future fino a RECURRING_END, comprese
+// quelle mai toccate — che poi non ereditavano più gli aggiornamenti del codice (es. il giro di
+// condensazione testi/hashtag del 28/9, invisibile sulle settimane successive per questo). Un
+// reminder ora conta come "modificato" solo se è stato davvero approvato/pubblicato o se la foto
+// è stata scelta a mano — non per il solo fatto di essere stato generato e mostrato una volta.
 function extractRecurringOverrides() {
   const ov = {};
   STATE.recurringPosts.forEach(p => {
     if (p.recurringType === 'story') return; // le story non hanno stato salvato: si calcola da storyInfo()
+    if (p.recurringType === 'reminder') {
+      const statoUtente = p.status === 'approvato' || p.status === 'published';
+      if (!statoUtente && !p.photoHint) return; // 'ready' automatico, mai toccato: niente da salvare
+    }
     if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile) {
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
     }
