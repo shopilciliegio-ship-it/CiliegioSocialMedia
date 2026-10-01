@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.9',
+    version: '2.24.10',
     date: '2026-10-01',
     current: true,
+    description: 'Fix urgente: la v2.24.9 aveva due apostrofi non protetti nel testo di ottobre della stagionalità, errore di sintassi che bloccava tutta la pagina (schermata vuota, nessun pulsante cliccabile). Corretto e controllato con verifica sintattica prima del push.',
+  },
+  {
+    version: '2.24.9',
+    date: '2026-10-01',
+    current: false,
     description: 'Lista "Stagionalità del mese" rivista con Luca per il post del venerdì: Ottobre non era più "finita la vendemmia" ma "la vendemmia continua, aspettando le olive" (restano le ultime uve, il Sangiovese, il re delle uve toscane); Dicembre da "la cantina riposa" a "la campagna riposa, la famiglia si ritrova". Le altre voci confermate.',
   },
   {
@@ -1058,7 +1064,7 @@ const STAGIONALITA_PLAN = {
   9:  { title: 'Settembre: è tempo di vendemmia',
         desc: 'Il momento più intenso dell\'anno: le mani viola d\'uva, il profumo di mosto in cantina, le giornate che iniziano all\'alba. Tre generazioni fanno questo lavoro da sempre, nello stesso modo.' },
   10: { title: 'Ottobre: la vendemmia continua, aspettando le olive',
-        desc: 'In vigna si raccolgono le ultime uve: il Sangiovese, il re delle uve toscane, che ha bisogno di più tempo per maturare. In cantina i mosti fermentano e il profumo riempie l'aria. Intanto gli ulivi cominciano a colorarsi: presto tocca alle olive. L'autunno in Chianti è due raccolti che si passano il testimone.' },
+        desc: 'In vigna si raccolgono le ultime uve: il Sangiovese, il re delle uve toscane, che ha bisogno di più tempo per maturare. In cantina i mosti fermentano e il profumo riempie l\'aria. Intanto gli ulivi cominciano a colorarsi: presto tocca alle olive. L\'autunno in Chianti è due raccolti che si passano il testimone.' },
   11: { title: 'Novembre: le olive, il freddo, l\'olio nuovo',
         desc: 'La raccolta delle olive è breve e intensa: si lavora in fretta perché il frutto non aspetta. Il primo olio dell\'anno arriva proprio in questi giorni.' },
   12: { title: 'Dicembre: la campagna riposa, la famiglia si ritrova',
