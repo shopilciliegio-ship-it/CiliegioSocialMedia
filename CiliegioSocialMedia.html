@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.24.9',
+    date: '2026-10-01',
+    current: true,
+    description: 'Lista "Stagionalità del mese" rivista con Luca per il post del venerdì: Ottobre non era più "finita la vendemmia" ma "la vendemmia continua, aspettando le olive" (restano le ultime uve, il Sangiovese, il re delle uve toscane); Dicembre da "la cantina riposa" a "la campagna riposa, la famiglia si ritrova". Le altre voci confermate.',
+  },
+  {
     version: '2.24.8',
     date: '2026-09-28',
-    current: true,
+    current: false,
     description: 'Blocco link dei post Facebook: sostituite le 3 righe separate (Prenota il tavolo, Shop online, WhatsApp) con un link unico alla nuova pagina fatta da Passepartout (ilciliegio.com/it/link), che le raccoglie tutte insieme a telefono e ristorante. Si aggiorna da solo anche nei testi già salvati e non ancora pubblicati (LINK_UTILI nel codice). Da fare a mano: aggiornare il link in bio di Instagram con lo stesso indirizzo, al posto dei tre link separati attuali.'
   },
   {
@@ -1051,11 +1057,11 @@ const STAGIONALITA_PLAN = {
         desc: 'È il momento dell\'invaiatura: gli acini passano dal verde al colore che avranno da maturi. In campagna si lavora anche ad agosto, mentre tutto intorno rallenta.' },
   9:  { title: 'Settembre: è tempo di vendemmia',
         desc: 'Il momento più intenso dell\'anno: le mani viola d\'uva, il profumo di mosto in cantina, le giornate che iniziano all\'alba. Tre generazioni fanno questo lavoro da sempre, nello stesso modo.' },
-  10: { title: 'Ottobre: finita la vendemmia, iniziano le olive',
-        desc: 'Il vino nuovo fermenta in cantina, e gli ulivi cominciano a colorarsi in vista della raccolta di novembre. L\'autunno in Chianti è due raccolti che si passano il testimone.' },
+  10: { title: 'Ottobre: la vendemmia continua, aspettando le olive',
+        desc: 'In vigna si raccolgono le ultime uve: il Sangiovese, il re delle uve toscane, che ha bisogno di più tempo per maturare. In cantina i mosti fermentano e il profumo riempie l'aria. Intanto gli ulivi cominciano a colorarsi: presto tocca alle olive. L'autunno in Chianti è due raccolti che si passano il testimone.' },
   11: { title: 'Novembre: le olive, il freddo, l\'olio nuovo',
         desc: 'La raccolta delle olive è breve e intensa: si lavora in fretta perché il frutto non aspetta. Il primo olio dell\'anno arriva proprio in questi giorni.' },
-  12: { title: 'Dicembre: la cantina riposa, la famiglia si ritrova',
+  12: { title: 'Dicembre: la campagna riposa, la famiglia si ritrova',
         desc: 'I lavori nei campi rallentano, il vino dell\'annata appena raccolta riposa, e la tavola si prepara per le feste. È il mese in cui il lavoro dell\'anno intero arriva a tavola.' },
 };
 
