@@ -32,7 +32,7 @@ async function disegna(foto, titolo, colore) {
   ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
   ctx.drawImage(logo, 0, 0, sw, sh, cx - lw / 2, cy - lh / 2, lw, lh); ctx.restore();
 
-  const pad = 64, maxW = W - pad * 2, testo = titolo.toUpperCase();
+  const pad = 64, maxW = W - pad * 2, testo = titolo.toUpperCase().replace(/!*$/, '!'); // il titolo ha SEMPRE il punto esclamativo (regola di Luca)
   ctx.textBaseline = 'alphabetic';
   ctx.font = '100px "Titan One"';
   const fontSize = Math.round(100 * (maxW / ctx.measureText(testo).width));
