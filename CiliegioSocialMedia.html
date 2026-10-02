@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.25.0',
+    version: '2.25.1',
     date: '2026-10-02',
     current: true,
+    description: 'Venerdì: lo scambio di posto è possibile solo con un altro venerdì dello stesso mese (niente scambi per sbaglio con mesi che non c\'entrano). Scelta foto del venerdì dalle cartelle dedicate al tipo di post su Dropbox (FotoStagionalita, FotoPiatti, FotoProdotti, FotoVenerdi per il libero), più le foto dei post del lunedì (FotoPost).'
+  },
+  {
+    version: '2.25.0',
+    date: '2026-10-02',
+    current: false,
     description: 'Calendario del venerdì: una casella per ogni venerdì (fino a giugno 2028) con rotazione stagionalità → prodotto → piatto → libero a ciclo continuo, titolo/descrizione dalle liste dei temi mensili. Come il lunedì: testi FB/IG, foto e titolo grafica modificabili, scrittura dei testi con AI, "Approva questo venerdì" (genera la grafica IG e scrive venerdi.json che legge la GitHub Action delle 11:00), esito di pubblicazione dal registro. Pulsante "Sposta questo post su un altro venerdì" per scambiare due venerdì. I post già usciti (25/9, 2/10) compaiono con la spunta verde, bloccati.'
   },
   {
@@ -1700,8 +1706,7 @@ function leggiCampiVenerdi(p) {
 // Elenco dei venerdì con cui si può scambiare (non pubblicati, diversi da questo, prossimi ~26).
 function fridaySwapOptions(p) {
   return STATE.recurringPosts
-    .filter(x => x.recurringType === 'venerdi' && x.id !== p.id && x.status !== 'published' && x.dateStr >= localDateStr(new Date()))
-    .slice(0, 26)
+    .filter(x => x.recurringType === 'venerdi' && x.id !== p.id && x.status !== 'published' && x.month === p.month && x.dateStr >= localDateStr(new Date()))
     .map(x => `<option value="${x.id}">${WEEKDAY_NAMES_IT[4]} ${x.date} ${x.month.split(' ')[1]} — ${recTypeOf(x).label.replace('Venerdì · ', '')}: ${_escHtml(x.title)}${x.status === 'approvato' ? ' (approvato)' : ''}</option>`)
     .join('');
 }
@@ -1711,6 +1716,7 @@ async function scambiaVenerdi(id) {
   const a = (findPostById(id) || {}).post, b = (findPostById(otherId) || {}).post;
   if (!a || !b) { showToast('⚠️ Scegli il venerdì con cui scambiare'); return; }
   if (a.status === 'published' || b.status === 'published') { showToast('⚠️ Un post già pubblicato non si sposta'); return; }
+  if (a.month !== b.month) { showToast('⚠️ Si può scambiare solo con un venerdì dello stesso mese'); return; }
   leggiCampiVenerdi(a);
   const msg = `Scambio il post di venerdì ${a.date} con quello di venerdì ${b.date}?` +
     ((a.status === 'approvato' || b.status === 'approvato') ? '\n\nI post approvati tornano "Pronto": vanno riapprovati nella nuova data.' : '');
@@ -2990,8 +2996,8 @@ function openPostDetail(id) {
         : `<button class="btn primary" style="width:100%" onclick="approvaVenerdi('${id}')">✅ Approva questo venerdì</button>
            <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: venerdì alle 11:00 parte da solo su Facebook e Instagram.</div>`}
       <div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
-        <label style="font-size:12px; color:var(--text2)">🔁 Sposta questo post su un altro venerdì (i due post si scambiano di posto)</label>
-        <div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target" style="flex:1">${fridaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaVenerdi('${id}')">Scambia</button></div>
+        <label style="font-size:12px; color:var(--text2)">🔁 Scambia questo post con un altro venerdì di ${p.month.split(' ')[0].toLowerCase()} (i due post si scambiano di posto)</label>
+        ${fridaySwapOptions(p) ? `<div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target" style="flex:1">${fridaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaVenerdi('${id}')">Scambia</button></div>` : `<div style="font-size:12px; color:var(--text3); margin-top:6px">Nessun altro venerdì ancora scambiabile in questo mese.</div>`}
       </div>
     </div>` : ''}
     <div style="display:flex; gap:8px">
@@ -3498,8 +3504,8 @@ let _photoCatPicker = ''; // categoria attiva nel picker del post
 
 // Estrae il nome della sottocartella (categoria) dal path di un file,
 // relativo a DROPBOX_PHOTO_FOLDER. '' se il file è nella cartella radice.
-function _photoCategoryOf(entry) {
-  const rootLower = DROPBOX_PHOTO_FOLDER.toLowerCase().replace(/\/+$/, '') + '/';
+function _photoCategoryOf(entry, folder = DROPBOX_PHOTO_FOLDER) {
+  const rootLower = folder.toLowerCase().replace(/\/+$/, '') + '/';
   const rel = entry.path_lower.startsWith(rootLower) ? entry.path_lower.slice(rootLower.length) : entry.name.toLowerCase();
   const slashIdx = rel.lastIndexOf('/');
   return slashIdx > -1 ? rel.slice(0, slashIdx) : '';
@@ -3507,7 +3513,7 @@ function _photoCategoryOf(entry) {
 
 // Lista i file immagine nella cartella foto su Dropbox e nelle sue sottocartelle,
 // con relativa categoria (nome sottocartella). [] se cartella vuota, null se errore.
-async function listDropboxPhotos() {
+async function listDropboxPhotos(folder = DROPBOX_PHOTO_FOLDER) {
   const token = await getDropboxAccessToken();
   if (!token) return null;
   try {
@@ -3516,7 +3522,7 @@ async function listDropboxPhotos() {
     let res = await fetch(`${DROPBOX_API}/files/list_folder`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: DROPBOX_PHOTO_FOLDER, recursive: true })
+      body: JSON.stringify({ path: folder, recursive: true })
     });
     if (res.status === 409) return []; // cartella non ancora creata
     if (!res.ok) { const d = await res.json(); throw new Error(d.error_summary || `HTTP ${res.status}`); }
@@ -3534,7 +3540,7 @@ async function listDropboxPhotos() {
     }
     return entries
       .filter(e => e['.tag'] === 'file' && /\.(jpe?g|png|webp|gif|heic)$/i.test(e.name))
-      .map(e => { e.category = _photoCategoryOf(e); return e; })
+      .map(e => { e.category = _photoCategoryOf(e, folder); return e; })
       .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
   } catch(e) { console.error('listDropboxPhotos:', e); return null; }
 }
@@ -3882,25 +3888,54 @@ function setPhotoCatMain(cat) {
 // Apre un modal per scegliere una foto da associare al post `postId`
 async function openPhotoPicker(postId) {
   openModal('📷 Scegli una foto dall\'archivio', `<div id="picker-wrap"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento...</div></div>`);
-  const photos = _photoCache.length ? _photoCache : await listDropboxPhotos();
-  if (photos) _photoCache = photos;
+  const post = (findPostById(postId) || {}).post;
+  let photos, cartelle = DROPBOX_PHOTO_FOLDER;
+  if (post && post.recurringType === 'venerdi') {
+    // Venerdì: cartella del tipo di post (stagionalità / piatti / prodotti / libero) + le foto dei post del lunedì
+    const kindFolder = FRIDAY_PHOTO_FOLDERS[post.fridayKind];
+    cartelle = `${kindFolder} + ${DROPBOX_PHOTO_FOLDER}`;
+    photos = await listFridayPhotos(post.fridayKind);
+  } else {
+    photos = _photoCache.length ? _photoCache : await listDropboxPhotos();
+    if (photos) _photoCache = photos;
+  }
+  _pickerPhotos = photos || [];
   if (!photos || !photos.length) {
     const wrap = document.getElementById('picker-wrap');
     if (wrap) wrap.innerHTML = `<div class="photo-empty"><div class="photo-empty-icon">📭</div>
-      Nessuna foto in <code>${DROPBOX_PHOTO_FOLDER}</code>.<br>Carica prima le foto su Dropbox.</div>`;
+      Nessuna foto in <code>${cartelle}</code>.<br>Carica prima le foto su Dropbox.</div>`;
     return;
   }
   _photoCatPicker = '';
   renderPhotoPickerGrid(postId);
 }
 
+// Foto del picker corrente (archivio normale oppure cartelle dedicate al venerdì).
+let _pickerPhotos = [];
+
+// Cartelle sorelle di FotoPost, una per tipo di post del venerdì.
+const FRIDAY_PHOTO_FOLDERS = {
+  tematico: '/IlCiliegio/SocialMedia/FotoStagionalita',
+  piatto:   '/IlCiliegio/SocialMedia/FotoPiatti',
+  prodotto: '/IlCiliegio/SocialMedia/FotoProdotti',
+  libero:   '/IlCiliegio/SocialMedia/FotoVenerdi',
+};
+async function listFridayPhotos(kind) {
+  const nome = (FRIDAY_PHOTO_FOLDERS[kind] || '').split('/').pop().replace(/^Foto/, '').toLowerCase();
+  const dedicate = (await listDropboxPhotos(FRIDAY_PHOTO_FOLDERS[kind])) || [];
+  dedicate.forEach(p => { p.category = nome + (p.category ? '/' + p.category : ''); });
+  const lunedi = (await listDropboxPhotos()) || [];
+  lunedi.forEach(p => { p.category = 'fotopost' + (p.category ? '/' + p.category : ''); });
+  return [...dedicate, ...lunedi];
+}
+
 // Ridisegna solo la griglia del picker (dopo un cambio di filtro categoria).
 function renderPhotoPickerGrid(postId) {
   const wrap = document.getElementById('picker-wrap');
   if (!wrap) return;
-  const photos = _photoCatPicker ? _photoCache.filter(p => p.category === _photoCatPicker) : _photoCache;
+  const photos = _photoCatPicker ? _pickerPhotos.filter(p => p.category === _photoCatPicker) : _pickerPhotos;
   wrap.innerHTML = `
-    ${_photoCatChips(_photoCache, _photoCatPicker, 'setPhotoCatPicker')}
+    ${_photoCatChips(_pickerPhotos, _photoCatPicker, 'setPhotoCatPicker')}
     <div class="photo-grid" id="photos-grid-picker">
       ${photos.map(p => _photoCardHtml(p, `selectPhoto('${_jsAttr(postId)}', '${_jsAttr(p.path_lower)}')`)).join('')}
     </div>`;
@@ -3914,7 +3949,7 @@ function setPhotoCatPicker(cat) {
 }
 
 function selectPhoto(postId, path) {
-  const photo = _photoCache.find(p => p.path_lower === path);
+  const photo = _pickerPhotos.find(p => p.path_lower === path) || _photoCache.find(p => p.path_lower === path);
   if (!photo) return;
   const found = findPostById(postId);
   if (!found) return;
