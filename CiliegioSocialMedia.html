@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.24.12',
+    version: '2.25.0',
     date: '2026-10-02',
     current: true,
+    description: 'Calendario del venerdì: una casella per ogni venerdì (fino a giugno 2028) con rotazione stagionalità → prodotto → piatto → libero a ciclo continuo, titolo/descrizione dalle liste dei temi mensili. Come il lunedì: testi FB/IG, foto e titolo grafica modificabili, scrittura dei testi con AI, "Approva questo venerdì" (genera la grafica IG e scrive venerdi.json che legge la GitHub Action delle 11:00), esito di pubblicazione dal registro. Pulsante "Sposta questo post su un altro venerdì" per scambiare due venerdì. I post già usciti (25/9, 2/10) compaiono con la spunta verde, bloccati.'
+  },
+  {
+    version: '2.24.12',
+    date: '2026-10-02',
+    current: false,
     description: 'Lista Prodotto del mese rivista con Luca: Distillati, Mario (feb), Chianti Colli Senesi e Riserva (mar), rosso giovane (apr), legumi (mag), bianco giovane (giu), Ciliegio in Fiore (lug), Le Forcacce e l\'Infernaccio (ago), farine (set), Vin Santo e cantuccini (ott), olio nuovo (nov), box regalo (dic).'
   },
   {
@@ -1384,6 +1390,7 @@ const RECURRING_TYPES = {
   tematico:  { icon: '🌿', label: 'Stagionalità del mese', cls: 'tag-tematico' },
   whatsnext: { icon: '🔭', label: 'What\'s Next?',         cls: 'tag-azienda' },
   story:     { icon: '📲', label: 'Story del giorno',      cls: 'tag-story' },
+  venerdi:   { icon: '🎯', label: 'Post del venerdì',      cls: 'tag-azienda' },
 };
 
 function makeRecurringPost(type, date) {
@@ -1468,6 +1475,361 @@ function makeStoryPost(date) {
   };
 }
 
+/* ═══════════════════════════════════════════════
+   POST DEL VENERDÌ (dal 2/10/2026, v2.25.0)
+   Una casella per ogni venerdì, con rotazione a ciclo continuo (non si azzera col mese):
+   stagionalità → prodotto → piatto → libero → riparte. Ancora: venerdì 2/10/2026 = stagionalità.
+   Titolo/descrizione vengono dalle liste dei temi mensili (mese del venerdì); "libero" è vuoto.
+   L'approvazione scrive la voce del giorno in venerdi.json su Dropbox (quello che legge la GitHub
+   Action alle 11:00): CSM e Action restano separati, come per il lunedì ma con un file loro.
+   I post già usciti (25/9, 2/10) si rileggono da venerdi.json + post-log.json e sono bloccati.
+═══════════════════════════════════════════════ */
+const FRIDAY_START   = '2026-09-25';
+const FRIDAY_ANCHOR  = '2026-10-02';
+const FRIDAY_CYCLE   = ['tematico', 'prodotto', 'piatto', 'libero'];
+const DROPBOX_VENERDI_PATH = '/IlCiliegio/SocialMedia/venerdi.json';
+
+const FRIDAY_KINDS = {
+  tematico: { icon: '🌿', label: 'Stagionalità',        cls: 'tag-tematico' },
+  prodotto: { icon: '📦', label: 'Prodotto del mese',   cls: 'tag-prodotto' },
+  piatto:   { icon: '🍽️', label: 'Piatto del mese',     cls: 'tag-piatto' },
+  libero:   { icon: '✨', label: 'Post libero',          cls: 'tag-azienda' },
+};
+
+// Tipo/etichetta mostrati su chip, righe e dettaglio (per il venerdì dipende dalla rotazione).
+function recTypeOf(p) {
+  if (p.recurringType === 'venerdi') {
+    const k = FRIDAY_KINDS[p.fridayKind] || FRIDAY_KINDS.libero;
+    return { icon: k.icon, label: 'Venerdì · ' + k.label, cls: k.cls };
+  }
+  return RECURRING_TYPES[p.recurringType];
+}
+
+function _daysBetween(aStr, bStr) {
+  const [ay, am, ad] = aStr.split('-').map(Number), [by, bm, bd] = bStr.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+function fridayKindFor(dateStr) {
+  const w = Math.round(_daysBetween(FRIDAY_ANCHOR, dateStr) / 7);
+  return FRIDAY_CYCLE[((w % 4) + 4) % 4];
+}
+
+// Titolo, descrizione e pilastro di default per (tipo, mese) — le tre liste dei temi mensili.
+function fridayTheme(kind, monthNum) {
+  if (kind === 'piatto')   { const x = PIATTO_PLAN[monthNum];       return { title: x.title, desc: x.desc, pillar: x.pillar, format: 'piatto' }; }
+  if (kind === 'prodotto') { const x = PRODOTTO_PLAN[monthNum];     return { title: x.title, desc: x.desc, pillar: x.pillar, format: 'scheda-tecnica' }; }
+  if (kind === 'tematico') { const x = STAGIONALITA_PLAN[monthNum]; return { title: x.title, desc: x.desc, pillar: 'azienda', format: 'stagionalita' }; }
+  return { title: 'Post libero', desc: 'Tema a tua scelta: scrivi titolo, testi e scegli la foto', pillar: 'azienda', format: 'libero' };
+}
+
+// Titolo breve per la grafica IG (il "!" lo aggiunge il disegno): prima parte del titolo, maiuscolo.
+function fridayGraphicTitle(title) {
+  const base = String(title || '').split(/\s[—–-]\s|:/)[0].trim().toUpperCase();
+  return base.length > 26 ? base.split(' ').slice(0, 2).join(' ') : base;
+}
+
+function makeFridayPost(date) {
+  const dateStr = localDateStr(date);
+  const kind = fridayKindFor(dateStr);
+  const th = fridayTheme(kind, date.getMonth() + 1);
+  return {
+    id: `r_${dateStr}_venerdi`,
+    recurringType: 'venerdi',
+    fridayKind: kind,
+    dateStr,
+    date: `${date.getDate()} ${MONTH_SHORT_IT[date.getMonth()]}`,
+    month: `${MONTH_NAMES_IT[date.getMonth()]} ${date.getFullYear()}`,
+    title: th.title, desc: th.desc, pillar: th.pillar,
+    platforms: ['fb', 'ig'], format: th.format,
+    status: 'draft', fbText: '', igText: '', photoFile: '', photoName: '',
+    graficaTitolo: fridayGraphicTitle(th.title)
+  };
+}
+
+// Titolo/descrizione/titolo-grafica di default di un venerdì (per decidere cosa salvare come modifica).
+function fridayDefaults(p) {
+  const monthNum = MONTH_NAMES_IT.indexOf(p.month.split(' ')[0]) + 1;
+  const th = fridayTheme(p.fridayKind, monthNum);
+  return { title: th.title, desc: th.desc, graficaTitolo: fridayGraphicTitle(th.title) };
+}
+
+/* --- venerdi.json su Dropbox (lettura per il calendario, scrittura all'approvazione) --- */
+async function readVenerdiJson() {
+  const token = await getDropboxAccessToken();
+  if (!token) throw new Error('Dropbox non connesso');
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_VENERDI_PATH }) }
+  });
+  if (res.status === 409) return { posts: {} };
+  if (!res.ok) throw new Error(`venerdi.json: HTTP ${res.status}`);
+  const j = await res.json();
+  j.posts = j.posts || {};
+  return j;
+}
+async function writeVenerdiJson(obj) {
+  const token = await getDropboxAccessToken();
+  if (!token) throw new Error('Dropbox non connesso');
+  const res = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_VENERDI_PATH, mode: 'overwrite', autorename: false, mute: true })
+    },
+    body: JSON.stringify(obj, null, 2)
+  });
+  if (!res.ok) throw new Error(`venerdi.json non salvato: HTTP ${res.status}`);
+}
+
+// Allinea venerdi.json al post: approvato → voce pronta per l'Action; altrimenti toglie la voce
+// (mai una già "published"). Rilegge il file ogni volta: l'Action lo riscrive quando pubblica.
+async function syncVenerdiEntry(p) {
+  const v = await readVenerdiJson();
+  const cur = v.posts[p.dateStr];
+  if (cur && cur.status === 'published') return false;
+  if (p.status === 'approvato') {
+    v.posts[p.dateStr] = {
+      ...(cur || {}),
+      status: 'approvato', tema: p.title,
+      photoFile: p.photoFile, graphicFile: p.graphicFile || '',
+      fbText: p.fbText, igText: p.igText,
+      approvatoIl: new Date().toISOString()
+    };
+  } else if (cur) {
+    delete v.posts[p.dateStr];
+  } else {
+    return false;
+  }
+  await writeVenerdiJson(v);
+  return true;
+}
+
+const STATE_VENERDI = { json: null, loaded: false };
+
+async function loadVenerdiJson() {
+  if (!STATE.dropboxRefreshToken || !navigator.onLine) return;
+  try { STATE_VENERDI.json = await readVenerdiJson(); STATE_VENERDI.loaded = true; }
+  catch (err) { console.warn('venerdi.json non caricato:', err.message); }
+}
+
+// I venerdì già usciti: testi, foto e grafica si rileggono da venerdi.json (non si perdono mai).
+function applyVenerdiJson() {
+  const posts = (STATE_VENERDI.json && STATE_VENERDI.json.posts) || {};
+  STATE.recurringPosts.forEach(p => {
+    if (p.recurringType !== 'venerdi') return;
+    const e = posts[p.dateStr];
+    if (!e || e.status !== 'published') return;
+    p.status = 'published';
+    if (e.fbText)      p.fbText = e.fbText;
+    if (e.igText)      p.igText = e.igText;
+    if (e.photoFile)   { p.photoFile = e.photoFile; p.photoName = e.photoFile.split('/').pop(); }
+    if (e.graphicFile) p.graphicFile = e.graphicFile;
+    if (e.tema)        p.title = e.tema;
+  });
+}
+
+/* --- Approvazione, annullamento, scambio --- */
+async function approvaVenerdi(id) {
+  const found = findPostById(id);
+  if (!found) return;
+  const p = found.post;
+  // Prende i valori correnti dei campi (anche se non ancora salvati)
+  leggiCampiVenerdi(p);
+  if (!p.photoFile) { showToast('⚠️ Manca la foto: scegline una prima di approvare'); return; }
+  if (!p.fbText.trim() || !p.igText.trim()) { showToast('⚠️ Mancano i testi Facebook e/o Instagram'); return; }
+  const lint = [...controllaContenuti(p.fbText), ...controllaContenuti(p.igText)];
+  if (lint.length && !confirm('Attenzione: ' + lint.join('; ') + '.\n\nApprovare lo stesso?')) return;
+  closeModalDirect();
+  showView('calendar');
+  showToast('⏳ Genero la grafica IG e preparo il post...');
+  try {
+    const blob = await downloadDropboxImageBlob(p.photoFile);
+    const idx = Math.round(_daysBetween(FRIDAY_START, p.dateStr) / 7) + 3;
+    const titolo = (p.graficaTitolo || fridayGraphicTitle(p.title)).replace(/!+$/, '') + '!';
+    const canvas = await disegnaGraficaIG(blob, titolo, _coloreGraficaPerIndice(idx));
+    const graphicBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    const graphicPath = `${DROPBOX_GRAPHIC_FOLDER}/v_${p.dateStr}_venerdi.jpg`;
+    await uploadDropboxBlob(graphicPath, graphicBlob);
+    p.graphicFile = graphicPath;
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Grafica IG non salvata (' + err.message + ') — NON approvato, riprova');
+    return;
+  }
+  const prima = p.status;
+  p.status = 'approvato';
+  try {
+    await syncVenerdiEntry(p);
+  } catch (err) {
+    console.error(err);
+    p.status = prima === 'approvato' ? 'ready' : prima;
+    showToast('❌ Non sono riuscito a scrivere venerdi.json (' + err.message + ') — post NON approvato, riprova');
+    showView(STATE.currentView);
+    return;
+  }
+  showView(STATE.currentView);
+  showToast(`✅ Approvato! Parte da solo venerdì ${p.date} alle 11:00`);
+  autoSync();
+}
+
+async function annullaApprovazioneVenerdi(id) {
+  const found = findPostById(id);
+  if (!found) return;
+  const p = found.post;
+  p.status = 'ready';
+  try { await syncVenerdiEntry(p); }
+  catch (err) { p.status = 'approvato'; showToast('❌ Non annullato: ' + err.message); return; }
+  closeModalDirect();
+  showView(STATE.currentView);
+  showToast('↩ Approvazione annullata: non partirà finché non lo riapprovi');
+  autoSync();
+}
+
+// Legge dal modale i campi del venerdì (titolo, titolo grafica, descrizione, testi).
+function leggiCampiVenerdi(p) {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  const t = v('pd-title'), g = v('pd-gtitle'), d = v('pd-desc'), fb = v('pd-fb'), ig = v('pd-ig');
+  if (t !== null) p.title = t.trim() || p.title;
+  if (g !== null) p.graficaTitolo = g.trim();
+  if (d !== null) p.desc = d;
+  if (fb !== null) p.fbText = fb;
+  if (ig !== null) p.igText = ig;
+}
+
+// Elenco dei venerdì con cui si può scambiare (non pubblicati, diversi da questo, prossimi ~26).
+function fridaySwapOptions(p) {
+  return STATE.recurringPosts
+    .filter(x => x.recurringType === 'venerdi' && x.id !== p.id && x.status !== 'published' && x.dateStr >= localDateStr(new Date()))
+    .slice(0, 26)
+    .map(x => `<option value="${x.id}">${WEEKDAY_NAMES_IT[4]} ${x.date} ${x.month.split(' ')[1]} — ${recTypeOf(x).label.replace('Venerdì · ', '')}: ${_escHtml(x.title)}${x.status === 'approvato' ? ' (approvato)' : ''}</option>`)
+    .join('');
+}
+
+async function scambiaVenerdi(id) {
+  const otherId = (document.getElementById('swap-target') || {}).value;
+  const a = (findPostById(id) || {}).post, b = (findPostById(otherId) || {}).post;
+  if (!a || !b) { showToast('⚠️ Scegli il venerdì con cui scambiare'); return; }
+  if (a.status === 'published' || b.status === 'published') { showToast('⚠️ Un post già pubblicato non si sposta'); return; }
+  leggiCampiVenerdi(a);
+  const msg = `Scambio il post di venerdì ${a.date} con quello di venerdì ${b.date}?` +
+    ((a.status === 'approvato' || b.status === 'approvato') ? '\n\nI post approvati tornano "Pronto": vanno riapprovati nella nuova data.' : '');
+  if (!confirm(msg)) return;
+  const CAMPI = ['fridayKind', 'title', 'desc', 'pillar', 'format', 'fbText', 'igText', 'photoFile', 'photoName', 'photoHint', 'graficaTitolo'];
+  CAMPI.forEach(c => { const t = a[c]; a[c] = b[c]; b[c] = t; });
+  [a, b].forEach(p => { p.graphicFile = ''; if (p.status === 'approvato') p.status = 'ready'; });
+  try { await syncVenerdiEntry(a); await syncVenerdiEntry(b); }
+  catch (err) { showToast('⚠️ Scambio fatto nel CSM ma venerdi.json non aggiornato: ' + err.message + ' — controlla prima di venerdì'); }
+  closeModalDirect();
+  showView('calendar');
+  showToast(`🔁 Scambiati: ${a.date} ⇄ ${b.date}`);
+  autoSync();
+}
+
+/* --- Testi con AI per il venerdì --- */
+function renderAiBoxVenerdi(p) {
+  const brief = `Tema: ${p.title}. ${p.desc}`.replace(/"/g, "'");
+  return `
+  <details style="margin-bottom:16px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
+    <summary style="cursor:pointer; font-weight:600; font-size:13px">✨ Scrivi i testi con AI (tema e tono)</summary>
+    <div style="margin-top:10px">
+      <label style="font-size:12px; color:var(--text2)">Di cosa deve parlare e con che tono? Aggiungi dettagli veri (nomi, annate) e cosa NON deve dire.</label>
+      <textarea id="ai-brief" style="min-height:80px">${_escHtml(brief)}</textarea>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap">
+        <button class="btn primary sm" id="ai-btn" onclick="generaTestiVenerdiAI('${p.id}')">✨ Genera bozza</button>
+        <button class="btn sm" id="ai-undo" style="display:none" onclick="ripristinaTestiAI()">↩ Ripristina testo precedente</button>
+      </div>
+      <div style="font-size:11px; color:var(--text3); margin-top:6px; line-height:1.5">La bozza compila i campi qui sotto: controllala, modificala, poi <strong>Approva</strong> (o Salva).</div>
+      <div id="ai-status" style="display:none; margin-top:8px; font-size:13px; line-height:1.5; padding:8px 10px; border-radius:8px"></div>
+      <div id="ai-key-row" style="margin-top:8px">${renderAiKeyRow()}</div>
+    </div>
+  </details>`;
+}
+
+function promptVenerdiAI(p, brief) {
+  const foto = (p.photoName || '').replace(/\.[a-z0-9]+$/i, '').replace(/-/g, ' ').trim() || '(nessuna)';
+  return `Sei il social media manager dell'Azienda Agricola Il Ciliegio (Monteriggioni, Siena, Chianti Colli Senesi), azienda a conduzione familiare dal 1952, terza generazione. Scrivi il post del venerdì (Facebook + Instagram) su un tema preciso.
+
+FATTI CERTI SULL'AZIENDA (sono gli unici che puoi usare): produce vino (Chianti Colli Senesi), olio extravergine, cereali antichi, farine, legumi, distillati e dolci; ha un ristorante con cucina tipica toscana; è un agriturismo didattico; fa vendita diretta e shop online.
+
+RICHIESTA DI LUCA (ha la precedenza su tutto, seguila alla lettera):
+"""${brief}"""
+
+FOTO ABBINATA AL POST (solo spunto visivo): ${foto}
+
+REGOLE FERREE:
+1. Usa solo i fatti sopra e ciò che scrive Luca. NON inventare piatti, ingredienti, provenienze, premi, numeri, prezzi, orari o persone.
+2. L'azienda NON ha un allevamento e NON produce salumi, prosciutto, carne o formaggi: non dirlo e non suggerirlo mai.
+3. Non parlare di spedizioni o consegne, a meno che Luca non lo chieda esplicitamente.
+4. Non scrivere link, numeri di telefono, "WhatsApp" o "link in bio", e non scrivere il saluto "Ciao mimmi!": li aggiunge il sistema.
+5. Tono caldo, familiare, genuino; frasi brevi e concrete; niente superlativi né enfasi da pubblicità. Italiano corretto. Testi SEMPLICI e brevi.
+6. Hashtag precisi e legati al tema (mai generici come #toscana #monteriggioni #vinotoscano).
+
+Rispondi SOLO con un oggetto JSON valido (nessun testo attorno, nessun markdown) con queste chiavi:
+{
+  "emoji": "una sola emoji coerente col tema",
+  "rigaApertura": "una frase breve e chiara che dice subito di cosa parliamo (uguale per FB e IG)",
+  "corpoFb": "uno o due brevi paragrafi per Facebook (massimo 3 frasi in tutto)",
+  "corpoIg": "una o due frasi brevi per Instagram, più dirette",
+  "hashtagFb": ["4 hashtag tematici, senza # davanti"],
+  "hashtagIg": ["6-8 hashtag tematici, senza # davanti"]
+}`;
+}
+
+function assemblaTestiVenerdi(r) {
+  const s = v => (typeof v === 'string' ? v.trim() : '');
+  if (!s(r && r.rigaApertura) || !s(r.corpoFb) || !s(r.corpoIg)) throw new Error('La risposta AI è incompleta — riprova');
+  const emoji = s(r.emoji) || '🍷';
+  const tags = (arr, max) => {
+    const visti = new Set(), out = [];
+    (Array.isArray(arr) ? arr : []).forEach(t => {
+      const pulito = String(t).replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '');
+      if (pulito && !visti.has(pulito.toLowerCase())) { visti.add(pulito.toLowerCase()); out.push('#' + pulito); }
+    });
+    return out.slice(0, max).join(' ');
+  };
+  const fb = [
+    `Ciao mimmi! ${emoji} ${s(r.rigaApertura)}`,
+    s(r.corpoFb),
+    fbBloccoTesto(),
+    tags(r.hashtagFb, 4)
+  ].filter(Boolean).join('\n\n');
+  const ig = [
+    `Ciao mimmi! ${emoji} ${s(r.rigaApertura)}`,
+    s(r.corpoIg),
+    'Per prenotazioni, shop e altro, link in bio. 👆',
+    tags(r.hashtagIg, 8)
+  ].filter(Boolean).join('\n\n');
+  return { fb, ig };
+}
+
+async function generaTestiVenerdiAI(id) {
+  const found = findPostById(id);
+  if (!found) return;
+  const brief = (document.getElementById('ai-brief').value || '').trim();
+  if (brief.length < 10) { showToast('⚠️ Scrivi almeno una riga sul tema'); return; }
+  if (!getAnthropicKey()) { showToast('⚠️ Inserisci prima la chiave API (in fondo al riquadro)'); return; }
+  const btn = document.getElementById('ai-btn');
+  btn.disabled = true; btn.textContent = '⏳ Sto scrivendo...';
+  aiStatus('⏳ Sto scrivendo la bozza: di solito 10-30 secondi…', 'wait');
+  try {
+    const risposta = await callClaude(promptVenerdiAI(found.post, brief), 2500);
+    const testi = assemblaTestiVenerdi(risposta);
+    _aiPrevTesti = { fb: document.getElementById('pd-fb').value, ig: document.getElementById('pd-ig').value };
+    document.getElementById('pd-fb').value = testi.fb;
+    document.getElementById('pd-ig').value = testi.ig;
+    document.getElementById('ai-undo').style.display = '';
+    aggiornaAvvisiTesti();
+    aiStatus('✅ Bozza scritta nei campi Facebook e Instagram qui sotto. Controllala, poi Approva o Salva.', 'ok');
+    document.getElementById('pd-fb').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (err) {
+    console.error(err);
+    aiStatus('❌ Bozza non generata: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Genera bozza';
+  }
+}
+
 function generateRecurringPosts() {
   const posts   = [];
   const start   = new Date(RECURRING_START     + 'T00:00:00');
@@ -1485,6 +1847,9 @@ function generateRecurringPosts() {
     const dow = d.getDay(); // 0=dom … 6=sab
     if (dow === 1) {
       posts.push(makeRecurringPost('reminder', new Date(d)));
+    }
+    if (dow === 5) {
+      posts.push(makeFridayPost(new Date(d)));
     }
     posts.push(makeStoryPost(new Date(d)));
   }
@@ -1555,6 +1920,18 @@ function extractRecurringOverrides() {
       const statoUtente = p.status === 'approvato' || p.status === 'published';
       if (!statoUtente && !p.photoHint) return; // 'ready' automatico, mai toccato: niente da salvare
     }
+    if (p.recurringType === 'venerdi') {
+      const def = fridayDefaults(p);
+      const kindCambiato = p.fridayKind !== fridayKindFor(p.dateStr);
+      const cambiato = kindCambiato || p.title !== def.title || p.desc !== def.desc || (p.graficaTitolo || '') !== def.graficaTitolo;
+      if (!(p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile || cambiato)) return;
+      ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
+      if (kindCambiato) ov[p.id].fridayKind = p.fridayKind;
+      if (p.title !== def.title) ov[p.id].title = p.title;
+      if (p.desc !== def.desc) ov[p.id].desc = p.desc;
+      if ((p.graficaTitolo || '') !== def.graficaTitolo) ov[p.id].graficaTitolo = p.graficaTitolo || '';
+      return;
+    }
     if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile) {
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
     }
@@ -1579,6 +1956,12 @@ function applyRecurringOverrides(source) {
   STATE.recurringPosts.forEach(p => {
     const o = source[p.id];
     if (!o) return;
+    if (p.recurringType === 'venerdi') {
+      if (o.fridayKind && FRIDAY_KINDS[o.fridayKind]) p.fridayKind = o.fridayKind;
+      if (o.title) p.title = o.title;
+      if (o.desc) p.desc = o.desc;
+      if (o.graficaTitolo !== undefined) p.graficaTitolo = o.graficaTitolo;
+    }
     if (o.fbText)                         p.fbText    = (p.recurringType === 'reminder' && o.status !== 'published') ? fbBloccoLink(o.fbText) : o.fbText;
     if (o.igText)                         p.igText    = (p.recurringType === 'reminder' && o.status !== 'published') ? igLinkInBio(o.igText) : o.igText;
     if (o.photoHint)                      p.photoHint = o.photoHint;
@@ -1601,7 +1984,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   updateDropboxStatus();
   // Registro story (sola lettura): in background, poi ridisegna il calendario se è ancora la vista aperta.
   loadStoriesLog().then(() => { if (STATE.storiesLogLoaded && STATE.currentView === 'calendar') showView('calendar'); });
-  loadPostLog().then(() => { if (STATE.postLogLoaded) { applyPostLog(); if (STATE.currentView === 'calendar') showView('calendar'); } });
+  Promise.all([loadPostLog(), loadVenerdiJson()]).then(() => {
+    if (STATE.postLogLoaded) applyPostLog();
+    if (STATE_VENERDI.loaded) applyVenerdiJson();
+    if (STATE.currentView === 'calendar') showView('calendar');
+  });
 });
 
 function loadFromStorage() {
@@ -1743,7 +2130,7 @@ function renderCalendarGrid(year, month) {
     const posts = byDay[day] || [];
     const chips = posts.slice(0, 3).map(p => {
       if (p.recurringType) {
-        const rt = RECURRING_TYPES[p.recurringType];
+        const rt = recTypeOf(p);
         return `<div class="cal-chip ${rt.cls}">${rt.icon} ${rt.label}${chipMark(p)}</div>`;
       }
       const pt = PILLAR_TAGS[p.pillar] || { cls:'tag-azienda', icon:'📌' };
@@ -1899,7 +2286,7 @@ function chipMark(p) {
   if (p.recurringType === 'story') {
     return { published: ' ✅', error: ' ⚠️', scheduled: ' 🕘', missed: ' ✖' }[storyInfo(p).status] || '';
   }
-  if (p.recurringType === 'reminder') {
+  if (p.recurringType === 'reminder' || p.recurringType === 'venerdi') {
     if (p.pubParziale) return ' ⚠️';
     return { published: ' ✅', approvato: ' 🕘' }[p.status] || '';
   }
@@ -1932,9 +2319,9 @@ async function loadPostLog() {
 function applyPostLog() {
   const posts = (STATE.postLog && STATE.postLog.posts) || {};
   STATE.recurringPosts.forEach(p => {
-    if (p.recurringType !== 'reminder') return;
+    if (p.recurringType !== 'reminder' && p.recurringType !== 'venerdi') return;
     p.pubParziale = false;
-    const e = posts[p.id];
+    const e = posts[logIdOf(p)];
     if (!e) return;
     const fbOk = !!(e.fb && e.fb.ok), igOk = !!(e.ig && e.ig.ok);
     if (fbOk && igOk) p.status = 'published';
@@ -1943,8 +2330,10 @@ function applyPostLog() {
 }
 
 // Riga di stato per piattaforma da mostrare nel dettaglio del reminder (vuota se non c'è nulla di registrato).
+function logIdOf(p) { return p.recurringType === 'venerdi' ? `v_${p.dateStr}_venerdi` : p.id; }
+
 function pubStatoHTML(p) {
-  const e = ((STATE.postLog && STATE.postLog.posts) || {})[p.id];
+  const e = ((STATE.postLog && STATE.postLog.posts) || {})[logIdOf(p)];
   if (!e) return '';
   const riga = (nome, x) => {
     if (!x) return `${nome}: —`;
@@ -2183,7 +2572,7 @@ function renderPostRow(p) {
     p.platforms.includes('ig') ? '<span class="plat plat-ig">Instagram</span>' : ''
   ].join('');
   const recurringTag = p.recurringType
-    ? `<span class="tag ${RECURRING_TYPES[p.recurringType].cls}">${RECURRING_TYPES[p.recurringType].icon} ${RECURRING_TYPES[p.recurringType].label}</span>`
+    ? `<span class="tag ${recTypeOf(p).cls}">${recTypeOf(p).icon} ${recTypeOf(p).label}</span>`
     : '';
   const thumb = storyI
     ? (storyI.previewable
@@ -2515,13 +2904,14 @@ function openPostDetail(id) {
     .join('');
 
   const recurringBadge = p.recurringType
-    ? `<div style="margin-bottom:12px"><span class="tag ${RECURRING_TYPES[p.recurringType].cls}">${RECURRING_TYPES[p.recurringType].icon} ${RECURRING_TYPES[p.recurringType].label} — ${p.month}</span></div>`
+    ? `<div style="margin-bottom:12px"><span class="tag ${recTypeOf(p).cls}">${recTypeOf(p).icon} ${recTypeOf(p).label} — ${p.month}</span></div>`
     : '';
   const deleteLabel = p.recurringType ? '🗑 Salta questa occorrenza' : '🗑 Elimina';
 
   openModal(p.title, `
     ${recurringBadge}
-    ${p.recurringType === 'reminder' ? pubStatoHTML(p) : ''}
+    ${(p.recurringType === 'reminder' || p.recurringType === 'venerdi') ? pubStatoHTML(p) : ''}
+    ${p.recurringType === 'venerdi' && p.status === 'published' ? '<div style="margin-bottom:12px; font-size:12px; color:var(--text2)">✅ Questo post è già uscito: testi e foto sono quelli pubblicati e non si possono più cambiare qui.</div>' : ''}
     <div class="form-group" style="margin-bottom:16px">
       <label>📸 Foto abbinata</label>
       ${p.photoFile ? `
@@ -2554,6 +2944,15 @@ function openPostDetail(id) {
         </div>
       </div>
     </div>` : ''}
+    ${p.recurringType === 'venerdi' ? `
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Titolo del post</label>
+      <input id="pd-title" value="${_escHtml(p.title)}">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Titolo sulla grafica Instagram (il "!" lo aggiungo io)</label>
+      <input id="pd-gtitle" value="${_escHtml(p.graficaTitolo || '')}">
+    </div>` : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Data</label>
       <input id="pd-date" value="${p.date}">
@@ -2567,6 +2966,7 @@ function openPostDetail(id) {
       <select id="pd-status">${statusOptions}</select>
     </div>
     ${p.recurringType === 'reminder' ? renderAiBox(id) : ''}
+    ${p.recurringType === 'venerdi' && p.status !== 'published' ? renderAiBoxVenerdi(p) : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Testo Facebook</label>
       <textarea id="pd-fb" style="min-height:160px" oninput="aggiornaAvvisiTesti()">${p.fbText || ''}</textarea>
@@ -2581,6 +2981,18 @@ function openPostDetail(id) {
     <div style="margin-bottom:16px">
       <button class="btn primary" style="width:100%" onclick="approvaSettimana('${id}')">✅ Approva questa settimana</button>
       <div style="margin-top:6px; font-size:12px; color:var(--text2)">Conferma che il menù di questa settimana è stato aggiornato sul sito e i post sono pronti per andare online lunedì. Genera e salva subito anche la grafica IG: lunedì alle 9:00 la pubblicazione (Facebook + Instagram) parte da sola.</div>
+    </div>` : ''}
+    ${p.recurringType === 'venerdi' && p.status !== 'published' ? `
+    <div style="margin-bottom:16px">
+      ${p.status === 'approvato'
+        ? `<div style="font-size:13px; margin-bottom:8px">🕘 Approvato: parte da solo venerdì ${p.date} alle 11:00.</div>
+           <button class="btn" style="width:100%" onclick="annullaApprovazioneVenerdi('${id}')">↩ Annulla approvazione</button>`
+        : `<button class="btn primary" style="width:100%" onclick="approvaVenerdi('${id}')">✅ Approva questo venerdì</button>
+           <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: venerdì alle 11:00 parte da solo su Facebook e Instagram.</div>`}
+      <div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
+        <label style="font-size:12px; color:var(--text2)">🔁 Sposta questo post su un altro venerdì (i due post si scambiano di posto)</label>
+        <div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target" style="flex:1">${fridaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaVenerdi('${id}')">Scambia</button></div>
+      </div>
     </div>` : ''}
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
@@ -2822,6 +3234,7 @@ function savePostDetail(id) {
   const found = findPostById(id);
   if (!found) return;
   const p = found.post;
+  if (p.recurringType === 'venerdi') return saveVenerdiDetail(p);
   p.date   = document.getElementById('pd-date').value;
   p.desc   = document.getElementById('pd-desc').value;
   p.status = document.getElementById('pd-status').value;
@@ -2830,6 +3243,25 @@ function savePostDetail(id) {
   closeModalDirect();
   showView('calendar');
   showToast('✅ Post aggiornato');
+  autoSync();
+}
+
+// Salvataggio del dettaglio di un venerdì. La data non si cambia da qui (si usa "Scambia"). Se il post era
+// approvato e cambia qualcosa che finisce nel post, torna "Pronto": va riapprovato (grafica e venerdi.json).
+async function saveVenerdiDetail(p) {
+  if (p.status === 'published') { closeModalDirect(); return; }
+  const prima = { t: p.title, g: p.graficaTitolo || '', fb: p.fbText, ig: p.igText, st: p.status };
+  leggiCampiVenerdi(p);
+  const stSel = document.getElementById('pd-status');
+  if (stSel) p.status = stSel.value;
+  const modificato = prima.t !== p.title || prima.g !== (p.graficaTitolo || '') || prima.fb !== p.fbText || prima.ig !== p.igText;
+  let avviso = '';
+  if (prima.st === 'approvato' && p.status === 'approvato' && modificato) { p.status = 'ready'; avviso = ' — era approvato: riapprovalo per aggiornare il post'; }
+  try { await syncVenerdiEntry(p); }
+  catch (err) { avviso += ' ⚠️ venerdi.json non aggiornato: ' + err.message; }
+  closeModalDirect();
+  showView('calendar');
+  showToast('✅ Post aggiornato' + avviso);
   autoSync();
 }
 
@@ -3592,6 +4024,8 @@ async function loadFromDropbox() {
     await loadStoriesLog();
     await loadPostLog();
     applyPostLog();
+    await loadVenerdiJson();
+    applyVenerdiJson();
     showView(STATE.currentView);
     showToast(`✅ Caricati ${STATE.posts.length} post da Dropbox!`);
     return true;
