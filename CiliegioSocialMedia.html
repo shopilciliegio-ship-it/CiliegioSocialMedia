@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.25.1',
+    version: '2.25.2',
     date: '2026-10-02',
     current: true,
+    description: 'Venerdì: i temi dello stesso tipo scorrono in sequenza senza ripetersi (prima in un mese con 5 venerdì lo stesso tipo cadeva due volte: stagionalità 2/10 e 30/10 identiche). Ora 30/10 prende il tema di novembre, 27/11 quello di dicembre, 25/12 quello di gennaio, e così via; vale anche per piatto e prodotto.'
+  },
+  {
+    version: '2.25.1',
+    date: '2026-10-02',
+    current: false,
     description: 'Venerdì: lo scambio di posto è possibile solo con un altro venerdì dello stesso mese (niente scambi per sbaglio con mesi che non c\'entrano). Scelta foto del venerdì dalle cartelle dedicate al tipo di post su Dropbox (FotoStagionalita, FotoPiatti, FotoProdotti, FotoVenerdi per il libero), più le foto dei post del lunedì (FotoPost).'
   },
   {
@@ -1520,6 +1526,30 @@ function fridayKindFor(dateStr) {
   return FRIDAY_CYCLE[((w % 4) + 4) % 4];
 }
 
+// Mese del tema (1-12) di ogni venerdì. Ogni tipo di post torna ogni 4 settimane, quindi in un mese di 5
+// venerdì lo stesso tipo cadrebbe due volte e uscirebbero due post uguali (es. stagionalità 2/10 e 30/10).
+// Regola (decisa con Luca il 2/10/2026): per ogni tipo i temi scorrono in sequenza, senza ripetersi:
+// tema = max(mese del venerdì, tema precedente dello stesso tipo + 1). Così 30/10 prende il tema di novembre,
+// 27/11 quello di dicembre, 25/12 quello di gennaio, ecc. Se il tema andasse più di 1 mese avanti al
+// calendario (succede una volta l'anno, perché 13 cicli di 4 settimane > 12 mesi) ripete il tema precedente.
+let _fridayThemeMonths = null;
+function fridayThemeMonth(dateStr) {
+  if (!_fridayThemeMonths) {
+    _fridayThemeMonths = {};
+    const prev = {};
+    const end = RECURRING_END;
+    for (let d = new Date(FRIDAY_START + 'T00:00:00'); localDateStr(d) <= end; d.setDate(d.getDate() + 7)) {
+      const ds = localDateStr(d), kind = fridayKindFor(ds);
+      const cal = d.getFullYear() * 12 + d.getMonth();
+      let m = prev[kind] === undefined ? cal : Math.max(cal, prev[kind] + 1);
+      if (m - cal > 1) m = prev[kind]; // sarebbe troppo avanti: ripete il tema precedente (una volta l'anno)
+      prev[kind] = m;
+      _fridayThemeMonths[ds] = (m % 12) + 1;
+    }
+  }
+  return _fridayThemeMonths[dateStr];
+}
+
 // Titolo, descrizione e pilastro di default per (tipo, mese) — le tre liste dei temi mensili.
 function fridayTheme(kind, monthNum) {
   if (kind === 'piatto')   { const x = PIATTO_PLAN[monthNum];       return { title: x.title, desc: x.desc, pillar: x.pillar, format: 'piatto' }; }
@@ -1537,7 +1567,7 @@ function fridayGraphicTitle(title) {
 function makeFridayPost(date) {
   const dateStr = localDateStr(date);
   const kind = fridayKindFor(dateStr);
-  const th = fridayTheme(kind, date.getMonth() + 1);
+  const th = fridayTheme(kind, fridayThemeMonth(dateStr));
   return {
     id: `r_${dateStr}_venerdi`,
     recurringType: 'venerdi',
@@ -1554,7 +1584,9 @@ function makeFridayPost(date) {
 
 // Titolo/descrizione/titolo-grafica di default di un venerdì (per decidere cosa salvare come modifica).
 function fridayDefaults(p) {
-  const monthNum = MONTH_NAMES_IT.indexOf(p.month.split(' ')[0]) + 1;
+  const monthNum = p.fridayKind === fridayKindFor(p.dateStr)
+    ? fridayThemeMonth(p.dateStr)
+    : MONTH_NAMES_IT.indexOf(p.month.split(' ')[0]) + 1;
   const th = fridayTheme(p.fridayKind, monthNum);
   return { title: th.title, desc: th.desc, graficaTitolo: fridayGraphicTitle(th.title) };
 }
