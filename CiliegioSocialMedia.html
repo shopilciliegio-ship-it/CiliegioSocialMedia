@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.25.2',
+    version: '2.26.0',
     date: '2026-10-02',
     current: true,
+    description: 'Post extra per le occasioni fuori dai temi mensili: cliccando un giorno del calendario (o "Nuovo post") compare "＋ Nuovo post per questo giorno" che apre l\'editor: titolo, data, foto (cartella FotoExtra + FotoPost), testi Facebook e Instagram separati, scrittura con AI, titolo e colore della grafica IG (di default il colore della settimana), scelta della piattaforma. "Approva" genera la grafica e scrive extra.json; l\'Action pubblica-extra.yml (Worker, ogni giorno alle 11:00) pubblica i post extra approvati per quel giorno. Ogni giorno del calendario è ora cliccabile. Anteprima grafica del venerdì/extra coerente con quella che esce.'
+  },
+  {
+    version: '2.25.2',
+    date: '2026-10-02',
+    current: false,
     description: 'Venerdì: i temi dello stesso tipo scorrono in sequenza senza ripetersi (prima in un mese con 5 venerdì lo stesso tipo cadeva due volte: stagionalità 2/10 e 30/10 identiche). Ora 30/10 prende il tema di novembre, 27/11 quello di dicembre, 25/12 quello di gennaio, e così via; vale anche per piatto e prodotto.'
   },
   {
@@ -1403,6 +1409,7 @@ const RECURRING_TYPES = {
   whatsnext: { icon: '🔭', label: 'What\'s Next?',         cls: 'tag-azienda' },
   story:     { icon: '📲', label: 'Story del giorno',      cls: 'tag-story' },
   venerdi:   { icon: '🎯', label: 'Post del venerdì',      cls: 'tag-azienda' },
+  extra:     { icon: '✨', label: 'Post extra',            cls: 'tag-azienda' },
 };
 
 function makeRecurringPost(type, date) {
@@ -1488,6 +1495,130 @@ function makeStoryPost(date) {
 }
 
 /* ═══════════════════════════════════════════════
+   POST EXTRA (v2.26.0): post una tantum per un'occasione, fuori dai temi mensili
+   Si creano cliccando un giorno del calendario → "＋ Nuovo post per questo giorno" (o il bottone "Nuovo post").
+   Stanno in STATE.posts (piano.json) con recurringType 'extra'. All'approvazione si scrivono in extra.json su
+   Dropbox, che ogni giorno alle 11:00 legge la GitHub Action pubblica-extra.yml (lanciata dal Worker).
+   Stesso editor del venerdì: testi FB/IG, foto, titolo grafica, colore della settimana, scrittura con AI.
+═══════════════════════════════════════════════ */
+const DROPBOX_EXTRA_PATH = '/IlCiliegio/SocialMedia/extra.json';
+
+function makeExtraPost(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return {
+    id: 'x_' + Date.now().toString(36),
+    recurringType: 'extra',
+    dateStr,
+    date: `${d} ${MONTH_SHORT_IT[m - 1]}`,
+    month: `${MONTH_NAMES_IT[m - 1]} ${y}`,
+    title: '', desc: '', pillar: 'azienda', platforms: ['fb', 'ig'], format: 'extra',
+    status: 'draft', fbText: '', igText: '', photoFile: '', photoName: '',
+    graficaTitolo: '', graficaColore: '', graphicFile: '',
+    _nuovo: true
+  };
+}
+
+function setExtraDate(p, dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  p.dateStr = dateStr;
+  p.date = `${d} ${MONTH_SHORT_IT[m - 1]}`;
+  p.month = `${MONTH_NAMES_IT[m - 1]} ${y}`;
+}
+
+// Apre l'editor su un post nuovo. Il post entra nel piano solo al primo "Salva" o "Approva": chiudere senza salvare non lascia bozze vuote.
+function nuovoPostExtra(dateStr) {
+  const p = makeExtraPost(dateStr || localDateStr(new Date()));
+  STATE.tempExtra = p;
+  openPostDetail(p.id);
+}
+
+function commitExtra(p) {
+  if (p.recurringType === 'extra' && p._nuovo) {
+    delete p._nuovo;
+    STATE.posts.push(p);
+    STATE.tempExtra = null;
+  }
+}
+
+// Colore della settimana = colore della grafica del reminder del lunedì di quella settimana (stessa regola di approvaSettimana).
+function weekColor(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const back = (new Date(y, m - 1, d).getDay() + 6) % 7;
+  const mon = new Date(y, m - 1, d - back);
+  const r = STATE.recurringPosts.find(x => {
+    if (x.recurringType !== 'reminder') return false;
+    const pd = parsePostDate(x);
+    return pd && pd.year === mon.getFullYear() && pd.month === mon.getMonth() && pd.day === mon.getDate();
+  });
+  let idx;
+  if (r && r.photoFile) {
+    const rot = FOTO_ROTAZIONE.find(z => `${DROPBOX_PHOTO_FOLDER}/${z.file}`.toLowerCase() === r.photoFile);
+    idx = rot ? rot.numero : [...r.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+  } else {
+    idx = Math.round(_daysBetween(FRIDAY_START, localDateStr(mon)) / 7) + 3;
+  }
+  return _coloreGraficaPerIndice(idx);
+}
+
+// Titolo (sempre col "!") e colore della grafica IG di un venerdì o di un extra: stessi valori per anteprima e approvazione.
+function graficaParams(p) {
+  const titolo = (p.graficaTitolo || fridayGraphicTitle(p.title)).replace(/!+$/, '') + '!';
+  const colore = p.recurringType === 'extra'
+    ? (p.graficaColore || weekColor(p.dateStr))
+    : _coloreGraficaPerIndice(Math.round(_daysBetween(FRIDAY_START, p.dateStr) / 7) + 3);
+  return { titolo, colore };
+}
+
+// Allinea extra.json: approvato → voce pronta per l'Action; altrimenti la toglie (mai una già "published").
+async function syncExtraEntry(p) {
+  const token = await getDropboxAccessToken();
+  if (!token) throw new Error('Dropbox non connesso');
+  const res = await fetch(`${DROPBOX_CONTENT}/files/download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_EXTRA_PATH }) }
+  });
+  let v = { posts: {} };
+  if (res.status !== 409) {
+    if (!res.ok) throw new Error(`extra.json: HTTP ${res.status}`);
+    v = await res.json(); v.posts = v.posts || {};
+  }
+  const cur = v.posts[p.id];
+  if (cur && cur.status === 'published') return false;
+  if (p.status === 'approvato') {
+    v.posts[p.id] = {
+      ...(cur || {}),
+      status: 'approvato', tema: p.title, dateStr: p.dateStr, platforms: p.platforms,
+      photoFile: p.photoFile, graphicFile: p.graphicFile || '',
+      fbText: p.fbText, igText: p.igText, approvatoIl: new Date().toISOString()
+    };
+  } else if (cur) {
+    delete v.posts[p.id];
+  } else {
+    return false;
+  }
+  const up = await fetch(`${DROPBOX_CONTENT}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`, 'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_EXTRA_PATH, mode: 'overwrite', autorename: false, mute: true })
+    },
+    body: JSON.stringify(v, null, 2)
+  });
+  if (!up.ok) throw new Error(`extra.json non salvato: HTTP ${up.status}`);
+  return true;
+}
+
+function syncEntryFor(p) { return p.recurringType === 'extra' ? syncExtraEntry(p) : syncVenerdiEntry(p); }
+
+// Rilegge i campi del modale e rigenera l'anteprima della grafica (titolo o colore cambiati).
+function aggiornaAnteprimaGrafica(id) {
+  const found = findPostById(id);
+  if (!found) return;
+  leggiCampiVenerdi(found.post);
+  if (found.post.photoFile) generaGraficaIG(id, true);
+}
+
+/* ═══════════════════════════════════════════════
    POST DEL VENERDÌ (dal 2/10/2026, v2.25.0)
    Una casella per ogni venerdì, con rotazione a ciclo continuo (non si azzera col mese):
    stagionalità → prodotto → piatto → libero → riparte. Ancora: venerdì 2/10/2026 = stagionalità.
@@ -1510,6 +1641,7 @@ const FRIDAY_KINDS = {
 
 // Tipo/etichetta mostrati su chip, righe e dettaglio (per il venerdì dipende dalla rotazione).
 function recTypeOf(p) {
+  if (p.recurringType === 'extra') return { icon: '✨', label: 'Extra' + (p.title ? ': ' + p.title : ''), cls: 'tag-azienda' };
   if (p.recurringType === 'venerdi') {
     const k = FRIDAY_KINDS[p.fridayKind] || FRIDAY_KINDS.libero;
     return { icon: k.icon, label: 'Venerdì · ' + k.label, cls: k.cls };
@@ -1674,22 +1806,29 @@ async function approvaVenerdi(id) {
   const p = found.post;
   // Prende i valori correnti dei campi (anche se non ancora salvati)
   leggiCampiVenerdi(p);
+  const isX = p.recurringType === 'extra';
+  if (isX && !p.title.trim()) { showToast('⚠️ Dai un titolo al post'); return; }
+  if (isX && !p.platforms.length) { showToast('⚠️ Scegli almeno una piattaforma (Facebook o Instagram)'); return; }
+  if (isX && p.dateStr < localDateStr(new Date())) { showToast('⚠️ La data è già passata: scegli oggi o un giorno futuro'); return; }
   if (!p.photoFile) { showToast('⚠️ Manca la foto: scegline una prima di approvare'); return; }
-  if (!p.fbText.trim() || !p.igText.trim()) { showToast('⚠️ Mancano i testi Facebook e/o Instagram'); return; }
-  const lint = [...controllaContenuti(p.fbText), ...controllaContenuti(p.igText)];
+  const pf = isX ? p.platforms : ['fb', 'ig'];
+  if ((pf.includes('fb') && !p.fbText.trim()) || (pf.includes('ig') && !p.igText.trim())) { showToast('⚠️ Mancano i testi delle piattaforme scelte'); return; }
+  const lint = [...(pf.includes('fb') ? controllaContenuti(p.fbText) : []), ...(pf.includes('ig') ? controllaContenuti(p.igText) : [])];
   if (lint.length && !confirm('Attenzione: ' + lint.join('; ') + '.\n\nApprovare lo stesso?')) return;
   closeModalDirect();
+  commitExtra(p);
   showView('calendar');
   showToast('⏳ Genero la grafica IG e preparo il post...');
   try {
-    const blob = await downloadDropboxImageBlob(p.photoFile);
-    const idx = Math.round(_daysBetween(FRIDAY_START, p.dateStr) / 7) + 3;
-    const titolo = (p.graficaTitolo || fridayGraphicTitle(p.title)).replace(/!+$/, '') + '!';
-    const canvas = await disegnaGraficaIG(blob, titolo, _coloreGraficaPerIndice(idx));
-    const graphicBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-    const graphicPath = `${DROPBOX_GRAPHIC_FOLDER}/v_${p.dateStr}_venerdi.jpg`;
-    await uploadDropboxBlob(graphicPath, graphicBlob);
-    p.graphicFile = graphicPath;
+    if (pf.includes('ig')) {
+      const blob = await downloadDropboxImageBlob(p.photoFile);
+      const gp = graficaParams(p);
+      const canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
+      const graphicBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      const graphicPath = isX ? `${DROPBOX_GRAPHIC_FOLDER}/${p.id}.jpg` : `${DROPBOX_GRAPHIC_FOLDER}/v_${p.dateStr}_venerdi.jpg`;
+      await uploadDropboxBlob(graphicPath, graphicBlob);
+      p.graphicFile = graphicPath;
+    }
   } catch (err) {
     console.error(err);
     showToast('⚠️ Grafica IG non salvata (' + err.message + ') — NON approvato, riprova');
@@ -1698,7 +1837,7 @@ async function approvaVenerdi(id) {
   const prima = p.status;
   p.status = 'approvato';
   try {
-    await syncVenerdiEntry(p);
+    await syncEntryFor(p);
   } catch (err) {
     console.error(err);
     p.status = prima === 'approvato' ? 'ready' : prima;
@@ -1707,7 +1846,7 @@ async function approvaVenerdi(id) {
     return;
   }
   showView(STATE.currentView);
-  showToast(`✅ Approvato! Parte da solo venerdì ${p.date} alle 11:00`);
+  showToast(isX ? `✅ Approvato! Parte da solo il ${p.date} alle 11:00` : `✅ Approvato! Parte da solo venerdì ${p.date} alle 11:00`);
   autoSync();
 }
 
@@ -1716,7 +1855,7 @@ async function annullaApprovazioneVenerdi(id) {
   if (!found) return;
   const p = found.post;
   p.status = 'ready';
-  try { await syncVenerdiEntry(p); }
+  try { await syncEntryFor(p); }
   catch (err) { p.status = 'approvato'; showToast('❌ Non annullato: ' + err.message); return; }
   closeModalDirect();
   showView(STATE.currentView);
@@ -1733,6 +1872,14 @@ function leggiCampiVenerdi(p) {
   if (d !== null) p.desc = d;
   if (fb !== null) p.fbText = fb;
   if (ig !== null) p.igText = ig;
+  if (p.recurringType === 'extra') {
+    const xd = v('pd-xdate');
+    if (xd && /^\d{4}-\d{2}-\d{2}$/.test(xd)) setExtraDate(p, xd);
+    const cfb = document.getElementById('pd-pfb'), cig = document.getElementById('pd-pig');
+    if (cfb && cig) p.platforms = [cfb.checked ? 'fb' : null, cig.checked ? 'ig' : null].filter(Boolean);
+    const gc = v('pd-gcolor');
+    if (gc) p.graficaColore = (gc.toLowerCase() === weekColor(p.dateStr).toLowerCase()) ? '' : gc;
+  }
 }
 
 // Elenco dei venerdì con cui si può scambiare (non pubblicati, diversi da questo, prossimi ~26).
@@ -1766,13 +1913,13 @@ async function scambiaVenerdi(id) {
 
 /* --- Testi con AI per il venerdì --- */
 function renderAiBoxVenerdi(p) {
-  const brief = `Tema: ${p.title}. ${p.desc}`.replace(/"/g, "'");
+  const brief = p.recurringType === 'extra' ? (p.desc || '') : `Tema: ${p.title}. ${p.desc}`.replace(/"/g, "'");
   return `
   <details style="margin-bottom:16px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
     <summary style="cursor:pointer; font-weight:600; font-size:13px">✨ Scrivi i testi con AI (tema e tono)</summary>
     <div style="margin-top:10px">
       <label style="font-size:12px; color:var(--text2)">Di cosa deve parlare e con che tono? Aggiungi dettagli veri (nomi, annate) e cosa NON deve dire.</label>
-      <textarea id="ai-brief" style="min-height:80px">${_escHtml(brief)}</textarea>
+      <textarea id="ai-brief" style="min-height:80px" placeholder="Es: ultimo giorno di vendemmia, ringrazia chi ci ha aiutato, tono caldo e familiare">${_escHtml(brief)}</textarea>
       <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap">
         <button class="btn primary sm" id="ai-btn" onclick="generaTestiVenerdiAI('${p.id}')">✨ Genera bozza</button>
         <button class="btn sm" id="ai-undo" style="display:none" onclick="ripristinaTestiAI()">↩ Ripristina testo precedente</button>
@@ -1786,7 +1933,7 @@ function renderAiBoxVenerdi(p) {
 
 function promptVenerdiAI(p, brief) {
   const foto = (p.photoName || '').replace(/\.[a-z0-9]+$/i, '').replace(/-/g, ' ').trim() || '(nessuna)';
-  return `Sei il social media manager dell'Azienda Agricola Il Ciliegio (Monteriggioni, Siena, Chianti Colli Senesi), azienda a conduzione familiare dal 1952, terza generazione. Scrivi il post del venerdì (Facebook + Instagram) su un tema preciso.
+  return `Sei il social media manager dell'Azienda Agricola Il Ciliegio (Monteriggioni, Siena, Chianti Colli Senesi), azienda a conduzione familiare dal 1952, terza generazione. ${p.recurringType === 'extra' ? 'Scrivi un post speciale (Facebook + Instagram) per un\'occasione precisa, fuori dal calendario ordinario dei temi mensili.' : 'Scrivi il post del venerdì (Facebook + Instagram) su un tema preciso.'}
 
 FATTI CERTI SULL'AZIENDA (sono gli unici che puoi usare): produce vino (Chianti Colli Senesi), olio extravergine, cereali antichi, farine, legumi, distillati e dolci; ha un ristorante con cucina tipica toscana; è un agriturismo didattico; fa vendita diretta e shop online.
 
@@ -2023,7 +2170,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Registro story (sola lettura): in background, poi ridisegna il calendario se è ancora la vista aperta.
   loadStoriesLog().then(() => { if (STATE.storiesLogLoaded && STATE.currentView === 'calendar') showView('calendar'); });
   Promise.all([loadPostLog(), loadVenerdiJson()]).then(() => {
-    if (STATE.postLogLoaded) applyPostLog();
+    if (STATE.postLogLoaded) { applyPostLog(); applyPostLogExtra(); }
     if (STATE_VENERDI.loaded) applyVenerdiJson();
     if (STATE.currentView === 'calendar') showView('calendar');
   });
@@ -2180,7 +2327,7 @@ function renderCalendarGrid(year, month) {
 
     const weekday = WEEKDAY_LABELS[(firstWeekday + day - 1) % 7];
     cells += `
-      <div class="cal-day${hasPosts ? ' has-posts' : ''}${isToday ? ' today' : ''}" ${hasPosts ? `onclick="showDayDetail(${year},${month},${day})"` : ''}>
+      <div class="cal-day${hasPosts ? ' has-posts' : ''}${isToday ? ' today' : ''}" onclick="showDayDetail(${year},${month},${day})">
         <div class="cal-day-num"><span class="cal-day-weekday">${weekday}</span> ${day}</div>
         ${chips}${more}
       </div>
@@ -2223,7 +2370,10 @@ function showDayDetail(year, month, day) {
   });
   const dow = (new Date(year, month, day).getDay() + 6) % 7;
   const title = `${WEEKDAY_NAMES_IT[dow]} ${day} ${MONTH_NAMES_IT[month]} ${year}`;
-  openModal(title, posts.map(p => renderPostRow(p)).join('') || '<div class="empty-state">Nessun post programmato per questo giorno.</div>');
+  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  openModal(title, (posts.map(p => renderPostRow(p)).join('') || '<div class="empty-state">Nessun post programmato per questo giorno.</div>') +
+    `<div style="margin-top:14px"><button class="btn primary" style="width:100%" onclick="nuovoPostExtra('${dateStr}')">＋ Nuovo post per questo giorno</button>
+     <div style="margin-top:6px; font-size:12px; color:var(--text3)">Per un'occasione fuori dai temi mensili: ti apro l'editor con foto, testi AI e grafica.</div></div>`);
   if (STATE.dropboxRefreshToken) loadThumbsForPosts(posts);
 }
 
@@ -2324,7 +2474,7 @@ function chipMark(p) {
   if (p.recurringType === 'story') {
     return { published: ' ✅', error: ' ⚠️', scheduled: ' 🕘', missed: ' ✖' }[storyInfo(p).status] || '';
   }
-  if (p.recurringType === 'reminder' || p.recurringType === 'venerdi') {
+  if (p.recurringType === 'reminder' || p.recurringType === 'venerdi' || p.recurringType === 'extra') {
     if (p.pubParziale) return ' ⚠️';
     return { published: ' ✅', approvato: ' 🕘' }[p.status] || '';
   }
@@ -2368,6 +2518,20 @@ function applyPostLog() {
 }
 
 // Riga di stato per piattaforma da mostrare nel dettaglio del reminder (vuota se non c'è nulla di registrato).
+function applyPostLogExtra() {
+  const posts = (STATE.postLog && STATE.postLog.posts) || {};
+  STATE.posts.forEach(p => {
+    if (p.recurringType !== 'extra') return;
+    p.pubParziale = false;
+    const e = posts[p.id];
+    if (!e) return;
+    const scelte = p.platforms && p.platforms.length ? p.platforms : ['fb', 'ig'];
+    const ok = scelte.every(k => e[k] && e[k].ok);
+    if (ok) p.status = 'published';
+    else if (e.fb || e.ig) p.pubParziale = true;
+  });
+}
+
 function logIdOf(p) { return p.recurringType === 'venerdi' ? `v_${p.dateStr}_venerdi` : p.id; }
 
 function pubStatoHTML(p) {
@@ -2924,6 +3088,7 @@ function saveSettings() {
    POST DETAIL MODAL
 ═══════════════════════════════════════════════ */
 function findPostById(id) {
+  if (STATE.tempExtra && STATE.tempExtra.id === id) return { post: STATE.tempExtra, list: STATE.posts };
   let p = STATE.posts.find(x => x.id === id);
   if (p) return { post: p, list: STATE.posts };
   p = STATE.recurringPosts.find(x => x.id === id);
@@ -2944,12 +3109,14 @@ function openPostDetail(id) {
   const recurringBadge = p.recurringType
     ? `<div style="margin-bottom:12px"><span class="tag ${recTypeOf(p).cls}">${recTypeOf(p).icon} ${recTypeOf(p).label} — ${p.month}</span></div>`
     : '';
-  const deleteLabel = p.recurringType ? '🗑 Salta questa occorrenza' : '🗑 Elimina';
+  const deleteLabel = (p.recurringType && p.recurringType !== 'extra') ? '🗑 Salta questa occorrenza' : '🗑 Elimina';
+  const isVE = p.recurringType === 'venerdi' || p.recurringType === 'extra';
+  const isX = p.recurringType === 'extra';
 
-  openModal(p.title, `
+  openModal(p.title || 'Nuovo post extra', `
     ${recurringBadge}
-    ${(p.recurringType === 'reminder' || p.recurringType === 'venerdi') ? pubStatoHTML(p) : ''}
-    ${p.recurringType === 'venerdi' && p.status === 'published' ? '<div style="margin-bottom:12px; font-size:12px; color:var(--text2)">✅ Questo post è già uscito: testi e foto sono quelli pubblicati e non si possono più cambiare qui.</div>' : ''}
+    ${(p.recurringType === 'reminder' || isVE) ? pubStatoHTML(p) : ''}
+    ${isVE && p.status === 'published' ? '<div style="margin-bottom:12px; font-size:12px; color:var(--text2)">✅ Questo post è già uscito: testi e foto sono quelli pubblicati e non si possono più cambiare qui.</div>' : ''}
     <div class="form-group" style="margin-bottom:16px">
       <label>📸 Foto abbinata</label>
       ${p.photoFile ? `
@@ -2982,29 +3149,48 @@ function openPostDetail(id) {
         </div>
       </div>
     </div>` : ''}
-    ${p.recurringType === 'venerdi' ? `
+    ${isVE ? `
     <div class="form-group" style="margin-bottom:12px">
       <label>Titolo del post</label>
-      <input id="pd-title" value="${_escHtml(p.title)}">
+      <input id="pd-title" value="${_escHtml(p.title)}" placeholder="${isX ? 'Es: Fine vendemmia' : ''}">
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label>Titolo sulla grafica Instagram (il "!" lo aggiungo io)</label>
-      <input id="pd-gtitle" value="${_escHtml(p.graficaTitolo || '')}">
+      <input id="pd-gtitle" value="${_escHtml(p.graficaTitolo || '')}" placeholder="${isX ? 'Se vuoto uso il titolo del post' : ''}" onchange="aggiornaAnteprimaGrafica('${id}')">
     </div>` : ''}
-    <div class="form-group" style="margin-bottom:12px">
+    ${isX ? `
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px">
+      <div class="form-group" style="flex:1; min-width:150px">
+        <label>Data di pubblicazione (ore 11:00)</label>
+        <input type="date" id="pd-xdate" value="${p.dateStr}">
+      </div>
+      <div class="form-group" style="flex:1; min-width:150px">
+        <label>Colore della grafica IG</label>
+        <input type="color" id="pd-gcolor" value="${p.graficaColore || weekColor(p.dateStr)}" onchange="aggiornaAnteprimaGrafica('${id}')" style="height:36px; padding:2px">
+        <div style="font-size:11px; color:var(--text3); margin-top:2px">Di default il colore della settimana</div>
+      </div>
+      <div class="form-group" style="flex:1; min-width:150px">
+        <label>Pubblica su</label>
+        <div style="display:flex; gap:12px; padding-top:6px">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; text-transform:none; letter-spacing:0"><input type="checkbox" id="pd-pfb" ${p.platforms.includes('fb') ? 'checked' : ''}> Facebook</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; text-transform:none; letter-spacing:0"><input type="checkbox" id="pd-pig" ${p.platforms.includes('ig') ? 'checked' : ''}> Instagram</label>
+        </div>
+      </div>
+    </div>` : ''}
+    <div class="form-group" style="margin-bottom:12px; ${isX ? 'display:none' : ''}">
       <label>Data</label>
       <input id="pd-date" value="${p.date}">
     </div>
     <div class="form-group" style="margin-bottom:12px">
-      <label>Descrizione</label>
-      <input id="pd-desc" value="${p.desc}">
+      <label>${isX ? 'Occasione (nota per te)' : 'Descrizione'}</label>
+      <input id="pd-desc" value="${_escHtml(p.desc)}">
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label>Stato</label>
       <select id="pd-status">${statusOptions}</select>
     </div>
     ${p.recurringType === 'reminder' ? renderAiBox(id) : ''}
-    ${p.recurringType === 'venerdi' && p.status !== 'published' ? renderAiBoxVenerdi(p) : ''}
+    ${isVE && p.status !== 'published' ? renderAiBoxVenerdi(p) : ''}
     <div class="form-group" style="margin-bottom:12px">
       <label>Testo Facebook</label>
       <textarea id="pd-fb" style="min-height:160px" oninput="aggiornaAvvisiTesti()">${p.fbText || ''}</textarea>
@@ -3020,17 +3206,17 @@ function openPostDetail(id) {
       <button class="btn primary" style="width:100%" onclick="approvaSettimana('${id}')">✅ Approva questa settimana</button>
       <div style="margin-top:6px; font-size:12px; color:var(--text2)">Conferma che il menù di questa settimana è stato aggiornato sul sito e i post sono pronti per andare online lunedì. Genera e salva subito anche la grafica IG: lunedì alle 9:00 la pubblicazione (Facebook + Instagram) parte da sola.</div>
     </div>` : ''}
-    ${p.recurringType === 'venerdi' && p.status !== 'published' ? `
+    ${isVE && p.status !== 'published' ? `
     <div style="margin-bottom:16px">
       ${p.status === 'approvato'
-        ? `<div style="font-size:13px; margin-bottom:8px">🕘 Approvato: parte da solo venerdì ${p.date} alle 11:00.</div>
+        ? `<div style="font-size:13px; margin-bottom:8px">🕘 Approvato: parte da solo ${isX ? '' : 'venerdì '}${p.date} alle 11:00.</div>
            <button class="btn" style="width:100%" onclick="annullaApprovazioneVenerdi('${id}')">↩ Annulla approvazione</button>`
-        : `<button class="btn primary" style="width:100%" onclick="approvaVenerdi('${id}')">✅ Approva questo venerdì</button>
-           <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: venerdì alle 11:00 parte da solo su Facebook e Instagram.</div>`}
-      <div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
+        : `<button class="btn primary" style="width:100%" onclick="approvaVenerdi('${id}')">✅ Approva ${isX ? 'questo post' : 'questo venerdì'}</button>
+           <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: ${isX ? `il ${p.date}` : 'venerdì'} alle 11:00 parte da solo su ${isX ? 'Facebook e/o Instagram (come scelto)' : 'Facebook e Instagram'}.</div>`}
+      ${isX ? '' : `<div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
         <label style="font-size:12px; color:var(--text2)">🔁 Scambia questo post con un altro venerdì di ${p.month.split(' ')[0].toLowerCase()} (i due post si scambiano di posto)</label>
         ${fridaySwapOptions(p) ? `<div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target" style="flex:1">${fridaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaVenerdi('${id}')">Scambia</button></div>` : `<div style="font-size:12px; color:var(--text3); margin-top:6px">Nessun altro venerdì ancora scambiabile in questo mese.</div>`}
-      </div>
+      </div>`}
     </div>` : ''}
     <div style="display:flex; gap:8px">
       <button class="btn primary" onclick="savePostDetail('${id}')">💾 Salva modifiche</button>
@@ -3272,7 +3458,7 @@ function savePostDetail(id) {
   const found = findPostById(id);
   if (!found) return;
   const p = found.post;
-  if (p.recurringType === 'venerdi') return saveVenerdiDetail(p);
+  if (p.recurringType === 'venerdi' || p.recurringType === 'extra') return saveVenerdiDetail(p);
   p.date   = document.getElementById('pd-date').value;
   p.desc   = document.getElementById('pd-desc').value;
   p.status = document.getElementById('pd-status').value;
@@ -3288,15 +3474,18 @@ function savePostDetail(id) {
 // approvato e cambia qualcosa che finisce nel post, torna "Pronto": va riapprovato (grafica e venerdi.json).
 async function saveVenerdiDetail(p) {
   if (p.status === 'published') { closeModalDirect(); return; }
-  const prima = { t: p.title, g: p.graficaTitolo || '', fb: p.fbText, ig: p.igText, st: p.status };
+  const prima = { t: p.title, g: p.graficaTitolo || '', fb: p.fbText, ig: p.igText, st: p.status, d: p.dateStr, pl: JSON.stringify(p.platforms), gc: p.graficaColore || '' };
   leggiCampiVenerdi(p);
+  if (p.recurringType === 'extra' && !p.title.trim()) { showToast('⚠️ Dai un titolo al post'); return; }
   const stSel = document.getElementById('pd-status');
   if (stSel) p.status = stSel.value;
-  const modificato = prima.t !== p.title || prima.g !== (p.graficaTitolo || '') || prima.fb !== p.fbText || prima.ig !== p.igText;
+  const modificato = prima.t !== p.title || prima.g !== (p.graficaTitolo || '') || prima.fb !== p.fbText || prima.ig !== p.igText ||
+    (p.recurringType === 'extra' && (prima.d !== p.dateStr || prima.pl !== JSON.stringify(p.platforms) || prima.gc !== (p.graficaColore || '')));
+  commitExtra(p);
   let avviso = '';
   if (prima.st === 'approvato' && p.status === 'approvato' && modificato) { p.status = 'ready'; avviso = ' — era approvato: riapprovalo per aggiornare il post'; }
-  try { await syncVenerdiEntry(p); }
-  catch (err) { avviso += ' ⚠️ venerdi.json non aggiornato: ' + err.message; }
+  try { await syncEntryFor(p); }
+  catch (err) { avviso += ' ⚠️ file dell\'Action non aggiornato: ' + err.message; }
   closeModalDirect();
   showView('calendar');
   showToast('✅ Post aggiornato' + avviso);
@@ -3306,6 +3495,11 @@ async function saveVenerdiDetail(p) {
 function deletePost(id) {
   const found = findPostById(id);
   if (!found) return;
+  if (found.post._nuovo) { STATE.tempExtra = null; closeModalDirect(); return; } // post extra mai salvato: niente da eliminare
+  if (found.post.recurringType === 'extra' && found.post.status === 'approvato') {
+    found.post.status = 'ready';
+    syncExtraEntry(found.post).catch(err => showToast('⚠️ Tolto dal CSM ma non dal file dell\'Action: ' + err.message));
+  }
   const msg = found.post.recurringType ? 'Saltare questa occorrenza ricorrente?' : 'Eliminare questo post dal piano?';
   if (!confirm(msg)) return;
   const idx = found.list.indexOf(found.post);
@@ -3320,6 +3514,7 @@ function deletePost(id) {
    ADD POST MODAL
 ═══════════════════════════════════════════════ */
 function addPostModal() {
+  return nuovoPostExtra(localDateStr(new Date())); // dalla v2.26.0 il bottone apre l'editor dei post extra (il vecchio modulo qui sotto non è più usato)
   openModal('Nuovo post', `
     <div class="form-grid">
       <div class="form-group"><label>Titolo</label><input id="np-title" placeholder="Es: Vendemmia 2025 — invito"></div>
@@ -3809,7 +4004,8 @@ async function generaGraficaIG(id, silent = false) {
     const rot = FOTO_ROTAZIONE.find(r => `${DROPBOX_PHOTO_FOLDER}/${r.file}`.toLowerCase() === p.photoFile);
     const idx = rot ? rot.numero : [...p.id].reduce((a,c) => a + c.charCodeAt(0), 0);
     const colore = _coloreGraficaPerIndice(idx);
-    const canvas = await disegnaGraficaIG(blob, titolo, colore);
+    const gp = (p.recurringType === 'venerdi' || p.recurringType === 'extra') ? graficaParams(p) : { titolo, colore };
+    const canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
     const container = document.getElementById('ig-graphic-preview');
     if (!container) return;
     container.innerHTML = '';
@@ -3922,11 +4118,12 @@ async function openPhotoPicker(postId) {
   openModal('📷 Scegli una foto dall\'archivio', `<div id="picker-wrap"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento...</div></div>`);
   const post = (findPostById(postId) || {}).post;
   let photos, cartelle = DROPBOX_PHOTO_FOLDER;
-  if (post && post.recurringType === 'venerdi') {
-    // Venerdì: cartella del tipo di post (stagionalità / piatti / prodotti / libero) + le foto dei post del lunedì
-    const kindFolder = FRIDAY_PHOTO_FOLDERS[post.fridayKind];
-    cartelle = `${kindFolder} + ${DROPBOX_PHOTO_FOLDER}`;
-    photos = await listFridayPhotos(post.fridayKind);
+  if (post && (post.recurringType === 'venerdi' || post.recurringType === 'extra')) {
+    // Venerdì/extra: cartella del tipo di post (stagionalità / piatti / prodotti / libero / extra) + le foto dei post del lunedì
+    const kind = post.recurringType === 'extra' ? 'extra' : post.fridayKind;
+    leggiCampiVenerdi(post); // non perdere quello che è già scritto nel modulo
+    cartelle = `${FRIDAY_PHOTO_FOLDERS[kind]} + ${DROPBOX_PHOTO_FOLDER}`;
+    photos = await listFridayPhotos(kind);
   } else {
     photos = _photoCache.length ? _photoCache : await listDropboxPhotos();
     if (photos) _photoCache = photos;
@@ -3951,6 +4148,7 @@ const FRIDAY_PHOTO_FOLDERS = {
   piatto:   '/IlCiliegio/SocialMedia/FotoPiatti',
   prodotto: '/IlCiliegio/SocialMedia/FotoProdotti',
   libero:   '/IlCiliegio/SocialMedia/FotoVenerdi',
+  extra:    '/IlCiliegio/SocialMedia/FotoExtra',
 };
 async function listFridayPhotos(kind) {
   const nome = (FRIDAY_PHOTO_FOLDERS[kind] || '').split('/').pop().replace(/^Foto/, '').toLowerCase();
@@ -3987,10 +4185,19 @@ function selectPhoto(postId, path) {
   if (!found) return;
   found.post.photoFile = photo.path_lower;
   found.post.photoName = photo.name;
+  fotoCambiataVE(found.post);
   closeModalDirect();
   showToast(`📸 Foto associata: ${photo.name}`);
   openPostDetail(postId);
   autoSync();
+}
+
+// Venerdì/extra approvato con foto cambiata: la grafica e la voce nel file dell'Action non valgono più → torna "Pronto".
+function fotoCambiataVE(p) {
+  if ((p.recurringType !== 'venerdi' && p.recurringType !== 'extra') || p.status !== 'approvato') return;
+  p.status = 'ready'; p.graphicFile = '';
+  syncEntryFor(p).then(() => showToast('↩ Foto cambiata: il post è tornato "Pronto", va riapprovato'))
+    .catch(err => showToast('⚠️ Foto cambiata ma l\'approvazione non è stata annullata sul file: ' + err.message));
 }
 
 function removePhoto(postId) {
@@ -3998,6 +4205,7 @@ function removePhoto(postId) {
   if (!found) return;
   found.post.photoFile = '';
   found.post.photoName = '';
+  fotoCambiataVE(found.post);
   openPostDetail(postId);
   autoSync();
 }
@@ -4091,6 +4299,7 @@ async function loadFromDropbox() {
     await loadStoriesLog();
     await loadPostLog();
     applyPostLog();
+    applyPostLogExtra();
     await loadVenerdiJson();
     applyVenerdiJson();
     showView(STATE.currentView);

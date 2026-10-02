@@ -42,8 +42,9 @@ const DRY_RUN   = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false
 const FORCE_RUN = String(process.env.FORCE_RUN || 'false').toLowerCase() === 'true';
 // Solo per recuperi manuali: "Facebook è già uscito (a mano o in un run finito male), non rifarlo".
 const FB_GIA_PUBBLICATO = String(process.env.FB_GIA_PUBBLICATO || 'false').toLowerCase() === 'true';
-const TIPO_POST = String(process.env.TIPO_POST || 'lunedi').toLowerCase() === 'venerdi' ? 'venerdi' : 'lunedi';
+const TIPO_POST = ['venerdi', 'extra'].includes(String(process.env.TIPO_POST || 'lunedi').toLowerCase()) ? String(process.env.TIPO_POST).toLowerCase() : 'lunedi';
 const DROPBOX_VENERDI_PATH = '/IlCiliegio/SocialMedia/venerdi.json';
+const DROPBOX_EXTRA_PATH   = '/IlCiliegio/SocialMedia/extra.json';
 
 function need(name) {
   const raw = process.env[name];
@@ -270,6 +271,7 @@ async function igPublishFeed(igUserId, igToken, imageUrl, caption) {
 
 async function main() {
   if (TIPO_POST === 'venerdi') return mainVenerdi();
+  if (TIPO_POST === 'extra') return mainExtra();
   if (!FORCE_RUN) {
     const weekday = romeWeekday();
     if (weekday !== 'Mon') {
@@ -336,9 +338,12 @@ async function pubblicaPost(dbxToken, postId, post, segnaPubblicato) {
   // Cosa è già uscito? (post-log.json). Una piattaforma con esito ok non si rifà mai; una con errore si ritenta.
   const logIniziale = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_LOG_PATH)) || {};
   const gia = (logIniziale.posts || {})[postId] || {};
+  const piattaforme = post.platforms || ['fb', 'ig'];
   let fbFatto = !!(gia.fb && gia.fb.ok);
-  const igFatto = !!(gia.ig && gia.ig.ok);
+  let igFatto = !!(gia.ig && gia.ig.ok);
   console.log(`📋 Stato registrato: Facebook ${fbFatto ? `già pubblicato (${gia.fb.at})` : 'da pubblicare'} · Instagram ${igFatto ? `già pubblicato (${gia.ig.at})` : 'da pubblicare'}`);
+  if (!piattaforme.includes('fb') && !fbFatto) { console.log('ℹ️ Facebook non selezionato per questo post: lo salto.'); fbFatto = true; }
+  if (!piattaforme.includes('ig') && !igFatto) { console.log('ℹ️ Instagram non selezionato per questo post: lo salto.'); igFatto = true; }
 
   if (FB_GIA_PUBBLICATO && !fbFatto) {
     if (DRY_RUN) {
@@ -455,6 +460,48 @@ async function mainVenerdi() {
     await dropboxUploadJson(dbxToken, DROPBOX_VENERDI_PATH, v);
     console.log("💾 venerdi.json aggiornato su Dropbox (status: published).");
   });
+}
+
+// Post EXTRA (occasioni fuori dai temi mensili, creati dal CSM cliccando un giorno del calendario): stanno in
+// extra.json su Dropbox ({posts: {"<id>": {status, dateStr, platforms, photoFile, graphicFile, fbText, igText, tema}}}).
+// Ogni giorno alle 11:00 (Worker) pubblica tutti quelli "approvato" con dateStr = oggi. Id nel registro: l'id stesso ("x_...").
+async function mainExtra() {
+  if (!FORCE_RUN) {
+    const hour = romeHour();
+    if (hour < 11 || hour >= 13) {
+      console.log(`ℹ️ Fuori dalla finestra 11:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
+      return;
+    }
+  } else {
+    console.log('⚠️ FORCE_RUN attivo: salto il controllo dell\'ora (solo per test manuali).');
+  }
+  const oggi = String(process.env.DATA_POST || '').trim() || todayRome();
+  const dbxToken = await dropboxAccessToken();
+  const extra = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_EXTRA_PATH)) || {};
+  const ids = Object.keys(extra.posts || {}).filter(id => {
+    const p = extra.posts[id];
+    return p && p.dateStr === oggi && p.status === 'approvato';
+  });
+  console.log(`📅 Post extra del ${oggi}: ${ids.length ? ids.join(', ') : 'nessuno approvato'}`);
+  for (const id of ids) {
+    const post = extra.posts[id];
+    const piattaforme = post.platforms || ['fb', 'ig'];
+    if ((piattaforme.includes('fb') && !post.fbText) || (piattaforme.includes('ig') && !post.igText) || !post.photoFile) {
+      console.error(`❌ Post extra ${id} approvato ma mancano foto o testi — serve un controllo.`);
+      process.exitCode = 1;
+      continue;
+    }
+    try { await dropboxTempLink(dbxToken, post.photoFile); }
+    catch (err) { console.error(`❌ Foto non trovata su Dropbox (${post.photoFile}): ${err.message}`); process.exitCode = 1; continue; }
+    console.log(`\n▶️ Post extra ${id}: "${post.tema || ''}"`);
+    await pubblicaPost(dbxToken, id, post, async () => {
+      const v = (await dropboxDownloadJsonOrNull(dbxToken, DROPBOX_EXTRA_PATH)) || {};
+      v.posts = v.posts || {};
+      v.posts[id] = { ...(v.posts[id] || post), status: 'published', publishedAt: new Date().toISOString() };
+      await dropboxUploadJson(dbxToken, DROPBOX_EXTRA_PATH, v);
+      console.log('💾 extra.json aggiornato su Dropbox (status: published).');
+    });
+  }
 }
 
 // Scrive l'esito di una piattaforma in post-log.json. Rilegge il file ogni volta (nessuno stato in memoria).
