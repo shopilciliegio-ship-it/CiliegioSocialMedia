@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.26.1',
+    date: '2026-10-08',
+    current: true,
+    description: 'Venerdì/extra: campo opzionale igPhotoFile (foto diversa solo per la grafica Instagram). Facebook pubblica sempre photoFile; in fase di approvazione e di anteprima la grafica IG parte da igPhotoFile se presente. Primo uso: Vin Santo 9/10 (IG con bottiglia piccola, FB con bottiglia grande). Cambiando la foto principale il campo si azzera.'
+  },
+  {
     version: '2.26.0',
     date: '2026-10-02',
-    current: true,
+    current: false,
     description: 'Post extra per le occasioni fuori dai temi mensili: cliccando un giorno del calendario (o "Nuovo post") compare "＋ Nuovo post per questo giorno" che apre l\'editor: titolo, data, foto (cartella FotoExtra + FotoPost), testi Facebook e Instagram separati, scrittura con AI, titolo e colore della grafica IG (di default il colore della settimana), scelta della piattaforma. "Approva" genera la grafica e scrive extra.json; l\'Action pubblica-extra.yml (Worker, ogni giorno alle 11:00) pubblica i post extra approvati per quel giorno. Ogni giorno del calendario è ora cliccabile. Anteprima grafica del venerdì/extra coerente con quella che esce.'
   },
   {
@@ -1821,7 +1827,7 @@ async function approvaVenerdi(id) {
   showToast('⏳ Genero la grafica IG e preparo il post...');
   try {
     if (pf.includes('ig')) {
-      const blob = await downloadDropboxImageBlob(p.photoFile);
+      const blob = await downloadDropboxImageBlob(p.igPhotoFile || p.photoFile); // igPhotoFile: foto diversa solo per la grafica IG (FB usa photoFile)
       const gp = graficaParams(p);
       const canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
       const graphicBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
@@ -1900,7 +1906,7 @@ async function scambiaVenerdi(id) {
   const msg = `Scambio il post di venerdì ${a.date} con quello di venerdì ${b.date}?` +
     ((a.status === 'approvato' || b.status === 'approvato') ? '\n\nI post approvati tornano "Pronto": vanno riapprovati nella nuova data.' : '');
   if (!confirm(msg)) return;
-  const CAMPI = ['fridayKind', 'title', 'desc', 'pillar', 'format', 'fbText', 'igText', 'photoFile', 'photoName', 'photoHint', 'graficaTitolo'];
+  const CAMPI = ['fridayKind', 'title', 'desc', 'pillar', 'format', 'fbText', 'igText', 'photoFile', 'photoName', 'photoHint', 'graficaTitolo', 'igPhotoFile'];
   CAMPI.forEach(c => { const t = a[c]; a[c] = b[c]; b[c] = t; });
   [a, b].forEach(p => { p.graphicFile = ''; if (p.status === 'approvato') p.status = 'ready'; });
   try { await syncVenerdiEntry(a); await syncVenerdiEntry(b); }
@@ -2112,6 +2118,7 @@ function extractRecurringOverrides() {
       if (!(p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile || cambiato)) return;
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
       if (kindCambiato) ov[p.id].fridayKind = p.fridayKind;
+      if (p.igPhotoFile) ov[p.id].igPhotoFile = p.igPhotoFile;
       if (p.title !== def.title) ov[p.id].title = p.title;
       if (p.desc !== def.desc) ov[p.id].desc = p.desc;
       if ((p.graficaTitolo || '') !== def.graficaTitolo) ov[p.id].graficaTitolo = p.graficaTitolo || '';
@@ -2151,6 +2158,7 @@ function applyRecurringOverrides(source) {
     if (o.igText)                         p.igText    = (p.recurringType === 'reminder' && o.status !== 'published') ? igLinkInBio(o.igText) : o.igText;
     if (o.photoHint)                      p.photoHint = o.photoHint;
     if (o.photoFile)                      p.photoFile = o.photoFile;
+    if (o.igPhotoFile)                    p.igPhotoFile = o.igPhotoFile;
     if (o.photoName)                      p.photoName = o.photoName;
     if (o.graphicFile)                    p.graphicFile = o.graphicFile;
     if (o.status && o.status !== 'draft') p.status    = o.status;
@@ -3997,7 +4005,7 @@ async function generaGraficaIG(id, silent = false) {
   const p = found.post;
   if (!silent) showToast('⏳ Genero la grafica...');
   try {
-    const blob   = await downloadDropboxImageBlob(p.photoFile);
+    const blob   = await downloadDropboxImageBlob(((p.recurringType === 'venerdi' || p.recurringType === 'extra') && p.igPhotoFile) || p.photoFile);
     const titolo = IG_GRAPHIC_TITOLO;
     // Indice per la rotazione colore: numero della foto se è un reminder (rotazione
     // fissa nota), altrimenti un indice stabile derivato dall'id del post.
@@ -4194,6 +4202,7 @@ function selectPhoto(postId, path) {
 
 // Venerdì/extra approvato con foto cambiata: la grafica e la voce nel file dell'Action non valgono più → torna "Pronto".
 function fotoCambiataVE(p) {
+  p.igPhotoFile = ''; // se si sceglie un'altra foto, la foto speciale per la grafica IG decade
   if ((p.recurringType !== 'venerdi' && p.recurringType !== 'extra') || p.status !== 'approvato') return;
   p.status = 'ready'; p.graphicFile = '';
   syncEntryFor(p).then(() => showToast('↩ Foto cambiata: il post è tornato "Pronto", va riapprovato'))
