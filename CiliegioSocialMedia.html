@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.26.2',
+    version: '2.27.0',
     date: '2026-10-09',
     current: true,
+    description: 'Lunedì: nel dettaglio del post nuovo riquadro "Scambia questo post con un altro lunedì" (anche di un altro mese): si scambiano testi FB/IG e foto; la grafica IG si rigenera e i post approvati vanno riapprovati. I lunedì scambiati vengono salvati nel piano anche se mai approvati (campo scambiato).'
+  },
+  {
+    version: '2.26.2',
+    date: '2026-10-09',
+    current: false,
     description: 'Orario unico delle 9:00 per tutti i post FB/IG: venerdì e post extra passano da 11:00 a 9:00 (Worker + finestre delle Action + testi del CSM). Nessuna modifica ai dati.'
   },
   {
@@ -1902,6 +1908,37 @@ function fridaySwapOptions(p) {
     .join('');
 }
 
+// Elenco dei lunedì con cui si può scambiare il post (non pubblicati, futuri, anche di altri mesi).
+function mondaySwapOptions(p) {
+  return STATE.recurringPosts
+    .filter(x => x.recurringType === 'reminder' && x.id !== p.id && x.status !== 'published' && x.dateStr >= localDateStr(new Date()))
+    .slice(0, 30)
+    .map(x => `<option value="${x.id}">${WEEKDAY_NAMES_IT[0]} ${x.date} ${x.month.split(' ')[0].toLowerCase()} — ${_escHtml((x.photoName || 'senza foto').replace(/\.[a-z]+$/i, ''))}${x.status === 'approvato' ? ' (approvato)' : ''}</option>`)
+    .join('');
+}
+
+// Scambia testi FB/IG e foto di due lunedì (anche di mesi diversi). La grafica IG va rigenerata: i post
+// approvati tornano "Pronto" e vanno riapprovati nella nuova data. Solo dati del CSM: nulla è già online.
+async function scambiaLunedi(id) {
+  const otherId = (document.getElementById('swap-target-lun') || {}).value;
+  const a = (findPostById(id) || {}).post, b = (findPostById(otherId) || {}).post;
+  if (!a || !b) { showToast('⚠️ Scegli il lunedì con cui scambiare'); return; }
+  if (a.status === 'published' || b.status === 'published') { showToast('⚠️ Un post già pubblicato non si sposta'); return; }
+  const fb = document.getElementById('pd-fb'), ig = document.getElementById('pd-ig');
+  if (fb) a.fbText = fb.value;
+  if (ig) a.igText = ig.value;
+  const msg = `Scambio il post di lunedì ${a.date} ${a.month.split(' ')[0].toLowerCase()} con quello di lunedì ${b.date} ${b.month.split(' ')[0].toLowerCase()}?` +
+    ((a.status === 'approvato' || b.status === 'approvato') ? '\n\nI post approvati tornano "Pronto": vanno riapprovati nella nuova data.' : '');
+  if (!confirm(msg)) return;
+  const CAMPI = ['fbText', 'igText', 'photoFile', 'photoName', 'photoHint'];
+  CAMPI.forEach(c => { const t = a[c]; a[c] = b[c]; b[c] = t; });
+  [a, b].forEach(x => { x.graphicFile = ''; x.scambiato = true; if (x.status === 'approvato') x.status = 'ready'; });
+  closeModalDirect();
+  showView('calendar');
+  showToast(`🔁 Scambiati: lunedì ${a.date} ⇄ ${b.date}`);
+  autoSync();
+}
+
 async function scambiaVenerdi(id) {
   const otherId = (document.getElementById('swap-target') || {}).value;
   const a = (findPostById(id) || {}).post, b = (findPostById(otherId) || {}).post;
@@ -2115,7 +2152,7 @@ function extractRecurringOverrides() {
     if (p.recurringType === 'story') return; // le story non hanno stato salvato: si calcola da storyInfo()
     if (p.recurringType === 'reminder') {
       const statoUtente = p.status === 'approvato' || p.status === 'published';
-      if (!statoUtente && !p.photoHint) return; // 'ready' automatico, mai toccato: niente da salvare
+      if (!statoUtente && !p.photoHint && !p.scambiato) return; // 'ready' automatico, mai toccato: niente da salvare
     }
     if (p.recurringType === 'venerdi') {
       const def = fridayDefaults(p);
@@ -2132,6 +2169,7 @@ function extractRecurringOverrides() {
     }
     if (p.fbText || p.igText || p.status !== 'draft' || p.photoHint || p.photoFile || p.graphicFile) {
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
+      if (p.scambiato) ov[p.id].scambiato = true;
     }
   });
   return ov;
@@ -2167,6 +2205,7 @@ function applyRecurringOverrides(source) {
     if (o.igPhotoFile)                    p.igPhotoFile = o.igPhotoFile;
     if (o.photoName)                      p.photoName = o.photoName;
     if (o.graphicFile)                    p.graphicFile = o.graphicFile;
+    if (o.scambiato)                      p.scambiato = true;
     if (o.status && o.status !== 'draft') p.status    = o.status;
   });
 }
@@ -3219,6 +3258,10 @@ function openPostDetail(id) {
     <div style="margin-bottom:16px">
       <button class="btn primary" style="width:100%" onclick="approvaSettimana('${id}')">✅ Approva questa settimana</button>
       <div style="margin-top:6px; font-size:12px; color:var(--text2)">Conferma che il menù di questa settimana è stato aggiornato sul sito e i post sono pronti per andare online lunedì. Genera e salva subito anche la grafica IG: lunedì alle 9:00 la pubblicazione (Facebook + Instagram) parte da sola.</div>
+      <div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
+        <label style="font-size:12px; color:var(--text2)">🔁 Scambia questo post con un altro lunedì (testi e foto si scambiano di posto, anche di un altro mese)</label>
+        ${mondaySwapOptions(p) && p.status !== 'published' ? `<div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target-lun" style="flex:1">${mondaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaLunedi('${id}')">Scambia</button></div>` : `<div style="font-size:12px; color:var(--text3); margin-top:6px">Nessun altro lunedì disponibile.</div>`}
+      </div>
     </div>` : ''}
     ${isVE && p.status !== 'published' ? `
     <div style="margin-bottom:16px">
