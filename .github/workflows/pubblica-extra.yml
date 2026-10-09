@@ -1,7 +1,7 @@
 name: Pubblica post extra
 
 on:
-  # Lanciato dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) ogni giorno alle 11:00 Europe/Rome,
+  # Lanciato dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) ogni giorno alle 9:00 Europe/Rome,
   # oppure a mano ("Run workflow"). I post extra approvati stanno in extra.json su Dropbox (vedi pubblica-social.js):
   # pubblica quelli con data = oggi, se ce ne sono.
   workflow_dispatch:

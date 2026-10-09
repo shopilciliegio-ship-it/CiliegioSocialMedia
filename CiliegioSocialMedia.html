@@ -554,16 +554,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.26.2',
+    date: '2026-10-09',
+    current: true,
+    description: 'Orario unico delle 9:00 per tutti i post FB/IG: venerdì e post extra passano da 11:00 a 9:00 (Worker + finestre delle Action + testi del CSM). Nessuna modifica ai dati.'
+  },
+  {
     version: '2.26.1',
     date: '2026-10-08',
-    current: true,
+    current: false,
     description: 'Venerdì/extra: campo opzionale igPhotoFile (foto diversa solo per la grafica Instagram). Facebook pubblica sempre photoFile; in fase di approvazione e di anteprima la grafica IG parte da igPhotoFile se presente. Primo uso: Vin Santo 9/10 (IG con bottiglia piccola, FB con bottiglia grande). Cambiando la foto principale il campo si azzera.'
   },
   {
     version: '2.26.0',
     date: '2026-10-02',
     current: false,
-    description: 'Post extra per le occasioni fuori dai temi mensili: cliccando un giorno del calendario (o "Nuovo post") compare "＋ Nuovo post per questo giorno" che apre l\'editor: titolo, data, foto (cartella FotoExtra + FotoPost), testi Facebook e Instagram separati, scrittura con AI, titolo e colore della grafica IG (di default il colore della settimana), scelta della piattaforma. "Approva" genera la grafica e scrive extra.json; l\'Action pubblica-extra.yml (Worker, ogni giorno alle 11:00) pubblica i post extra approvati per quel giorno. Ogni giorno del calendario è ora cliccabile. Anteprima grafica del venerdì/extra coerente con quella che esce.'
+    description: 'Post extra per le occasioni fuori dai temi mensili: cliccando un giorno del calendario (o "Nuovo post") compare "＋ Nuovo post per questo giorno" che apre l\'editor: titolo, data, foto (cartella FotoExtra + FotoPost), testi Facebook e Instagram separati, scrittura con AI, titolo e colore della grafica IG (di default il colore della settimana), scelta della piattaforma. "Approva" genera la grafica e scrive extra.json; l\'Action pubblica-extra.yml (Worker, ogni giorno alle 9:00) pubblica i post extra approvati per quel giorno. Ogni giorno del calendario è ora cliccabile. Anteprima grafica del venerdì/extra coerente con quella che esce.'
   },
   {
     version: '2.25.2',
@@ -581,7 +587,7 @@ const VERSIONS = [
     version: '2.25.0',
     date: '2026-10-02',
     current: false,
-    description: 'Calendario del venerdì: una casella per ogni venerdì (fino a giugno 2028) con rotazione stagionalità → prodotto → piatto → libero a ciclo continuo, titolo/descrizione dalle liste dei temi mensili. Come il lunedì: testi FB/IG, foto e titolo grafica modificabili, scrittura dei testi con AI, "Approva questo venerdì" (genera la grafica IG e scrive venerdi.json che legge la GitHub Action delle 11:00), esito di pubblicazione dal registro. Pulsante "Sposta questo post su un altro venerdì" per scambiare due venerdì. I post già usciti (25/9, 2/10) compaiono con la spunta verde, bloccati.'
+    description: 'Calendario del venerdì: una casella per ogni venerdì (fino a giugno 2028) con rotazione stagionalità → prodotto → piatto → libero a ciclo continuo, titolo/descrizione dalle liste dei temi mensili. Come il lunedì: testi FB/IG, foto e titolo grafica modificabili, scrittura dei testi con AI, "Approva questo venerdì" (genera la grafica IG e scrive venerdi.json che legge la GitHub Action delle 9:00), esito di pubblicazione dal registro. Pulsante "Sposta questo post su un altro venerdì" per scambiare due venerdì. I post già usciti (25/9, 2/10) compaiono con la spunta verde, bloccati.'
   },
   {
     version: '2.24.12',
@@ -1504,7 +1510,7 @@ function makeStoryPost(date) {
    POST EXTRA (v2.26.0): post una tantum per un'occasione, fuori dai temi mensili
    Si creano cliccando un giorno del calendario → "＋ Nuovo post per questo giorno" (o il bottone "Nuovo post").
    Stanno in STATE.posts (piano.json) con recurringType 'extra'. All'approvazione si scrivono in extra.json su
-   Dropbox, che ogni giorno alle 11:00 legge la GitHub Action pubblica-extra.yml (lanciata dal Worker).
+   Dropbox, che ogni giorno alle 9:00 legge la GitHub Action pubblica-extra.yml (lanciata dal Worker).
    Stesso editor del venerdì: testi FB/IG, foto, titolo grafica, colore della settimana, scrittura con AI.
 ═══════════════════════════════════════════════ */
 const DROPBOX_EXTRA_PATH = '/IlCiliegio/SocialMedia/extra.json';
@@ -1630,7 +1636,7 @@ function aggiornaAnteprimaGrafica(id) {
    stagionalità → prodotto → piatto → libero → riparte. Ancora: venerdì 2/10/2026 = stagionalità.
    Titolo/descrizione vengono dalle liste dei temi mensili (mese del venerdì); "libero" è vuoto.
    L'approvazione scrive la voce del giorno in venerdi.json su Dropbox (quello che legge la GitHub
-   Action alle 11:00): CSM e Action restano separati, come per il lunedì ma con un file loro.
+   Action alle 9:00): CSM e Action restano separati, come per il lunedì ma con un file loro.
    I post già usciti (25/9, 2/10) si rileggono da venerdi.json + post-log.json e sono bloccati.
 ═══════════════════════════════════════════════ */
 const FRIDAY_START   = '2026-09-25';
@@ -1852,7 +1858,7 @@ async function approvaVenerdi(id) {
     return;
   }
   showView(STATE.currentView);
-  showToast(isX ? `✅ Approvato! Parte da solo il ${p.date} alle 11:00` : `✅ Approvato! Parte da solo venerdì ${p.date} alle 11:00`);
+  showToast(isX ? `✅ Approvato! Parte da solo il ${p.date} alle 9:00` : `✅ Approvato! Parte da solo venerdì ${p.date} alle 9:00`);
   autoSync();
 }
 
@@ -3169,7 +3175,7 @@ function openPostDetail(id) {
     ${isX ? `
     <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px">
       <div class="form-group" style="flex:1; min-width:150px">
-        <label>Data di pubblicazione (ore 11:00)</label>
+        <label>Data di pubblicazione (ore 9:00)</label>
         <input type="date" id="pd-xdate" value="${p.dateStr}">
       </div>
       <div class="form-group" style="flex:1; min-width:150px">
@@ -3217,10 +3223,10 @@ function openPostDetail(id) {
     ${isVE && p.status !== 'published' ? `
     <div style="margin-bottom:16px">
       ${p.status === 'approvato'
-        ? `<div style="font-size:13px; margin-bottom:8px">🕘 Approvato: parte da solo ${isX ? '' : 'venerdì '}${p.date} alle 11:00.</div>
+        ? `<div style="font-size:13px; margin-bottom:8px">🕘 Approvato: parte da solo ${isX ? '' : 'venerdì '}${p.date} alle 9:00.</div>
            <button class="btn" style="width:100%" onclick="annullaApprovazioneVenerdi('${id}')">↩ Annulla approvazione</button>`
         : `<button class="btn primary" style="width:100%" onclick="approvaVenerdi('${id}')">✅ Approva ${isX ? 'questo post' : 'questo venerdì'}</button>
-           <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: ${isX ? `il ${p.date}` : 'venerdì'} alle 11:00 parte da solo su ${isX ? 'Facebook e/o Instagram (come scelto)' : 'Facebook e Instagram'}.</div>`}
+           <div style="margin-top:6px; font-size:12px; color:var(--text2)">Genera e salva la grafica IG e prepara il post: ${isX ? `il ${p.date}` : 'venerdì'} alle 9:00 parte da solo su ${isX ? 'Facebook e/o Instagram (come scelto)' : 'Facebook e Instagram'}.</div>`}
       ${isX ? '' : `<div style="margin-top:14px; background:var(--surface2); border-radius:var(--radius-lg); padding:10px 12px">
         <label style="font-size:12px; color:var(--text2)">🔁 Scambia questo post con un altro venerdì di ${p.month.split(' ')[0].toLowerCase()} (i due post si scambiano di posto)</label>
         ${fridaySwapOptions(p) ? `<div style="display:flex; gap:8px; margin-top:6px"><select id="swap-target" style="flex:1">${fridaySwapOptions(p)}</select><button class="btn sm" onclick="scambiaVenerdi('${id}')">Scambia</button></div>` : `<div style="font-size:12px; color:var(--text3); margin-top:6px">Nessun altro venerdì ancora scambiabile in questo mese.</div>`}

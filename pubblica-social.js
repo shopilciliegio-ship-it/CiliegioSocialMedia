@@ -20,7 +20,7 @@
 // Modalità VENERDÌ (TIPO_POST=venerdi, workflow pubblica-venerdi.yml, dal 25/9/2026): stesso flusso, ma il
 // post del giorno sta in venerdi.json su Dropbox ({posts: {"YYYY-MM-DD": {status, photoFile, fbText,
 // igText, tema}}}), NON in piano.json: CSM riscrive piano.json solo con i post che genera lei (i lunedì)
-// e cancellerebbe quelli del venerdì. Finestra 11:00–12:59; id nel registro post-log.json "v_YYYY-MM-DD_venerdi".
+// e cancellerebbe quelli del venerdì. Finestra 9:00–12:59; id nel registro post-log.json "v_YYYY-MM-DD_venerdi".
 //
 // Nessuna dipendenza npm: usa fetch/FormData/Blob globali di Node 20+.
 
@@ -424,8 +424,8 @@ async function mainVenerdi() {
       return;
     }
     const hour = romeHour();
-    if (hour < 11 || hour >= 13) {
-      console.log(`ℹ️ Fuori dalla finestra 11:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
+    if (hour < 9 || hour >= 13) {
+      console.log(`ℹ️ Fuori dalla finestra 9:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
       return;
     }
   } else {
@@ -464,12 +464,12 @@ async function mainVenerdi() {
 
 // Post EXTRA (occasioni fuori dai temi mensili, creati dal CSM cliccando un giorno del calendario): stanno in
 // extra.json su Dropbox ({posts: {"<id>": {status, dateStr, platforms, photoFile, graphicFile, fbText, igText, tema}}}).
-// Ogni giorno alle 11:00 (Worker) pubblica tutti quelli "approvato" con dateStr = oggi. Id nel registro: l'id stesso ("x_...").
+// Ogni giorno alle 9:00 (Worker) pubblica tutti quelli "approvato" con dateStr = oggi. Id nel registro: l'id stesso ("x_...").
 async function mainExtra() {
   if (!FORCE_RUN) {
     const hour = romeHour();
-    if (hour < 11 || hour >= 13) {
-      console.log(`ℹ️ Fuori dalla finestra 11:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
+    if (hour < 9 || hour >= 13) {
+      console.log(`ℹ️ Fuori dalla finestra 9:00–13:00 a Europe/Rome (ora attuale: ${hour}) — nessuna azione.`);
       return;
     }
   } else {

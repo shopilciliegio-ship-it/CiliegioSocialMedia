@@ -7,13 +7,11 @@
 // Un solo cron trigger: "0,30 7,8,9 * * *" (UTC — va impostato così nel pannello Cloudflare, Triggers).
 // Copre ora legale e solare; il Worker guarda l'ora vera di Roma e lancia solo se è il momento giusto:
 //   - lunedì  9:00 Roma → pubblica-lunedi.yml           (post FB + IG del reminder)
-//   - venerdì 11:00 Roma → pubblica-venerdi.yml         (post FB + IG del venerdì, da venerdi.json)
-//   - ogni giorno 11:00 Roma → pubblica-extra.yml       (post extra approvati nel CSM per quel giorno, da extra.json)
-//     ATTENZIONE: le 11:00 di Roma sono nel cron solo con l'ora legale (9 UTC). Dal 25/10 (ora solare)
-//     sono le 10 UTC: aggiungere 10 al cron trigger ("0,30 7,8,9,10 * * *") prima di allora.
+//   - venerdì  9:00 Roma → pubblica-venerdi.yml         (post FB + IG del venerdì, da venerdi.json)
+//   - ogni giorno  9:00 Roma → pubblica-extra.yml       (post extra approvati nel CSM per quel giorno, da extra.json)
 //   - ogni giorno 9:30 Roma → pubblica-stories.yml      (stories pranzo + cena)
 //   - ogni giorno 10:30 Roma → verifica-pubblicazione.yml (email di controllo a Luca)
-// Gli orari UTC dell'altra stagione vengono ignorati (lo slot 11:00 Roma serve al venerdì).
+// Gli orari UTC dell'altra stagione vengono ignorati (tutte le 9:00 e 9:30 Roma sono coperte sia in ora legale sia solare).
 //
 // I workflow hanno comunque la finestra 9:00–11:00 e il controllo anti doppio invio: se questo timer e il cron
 // di riserva di GitHub partono entrambi, non si pubblica due volte.
@@ -37,9 +35,9 @@ const BRANCH = 'main';
 const JOBS = {
   lunedi:   { workflow: 'pubblica-lunedi.yml',        quando: r => r.weekday === 'Mon' && r.hour === 9  && r.slot === 0,
               inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },
-  venerdi:  { workflow: 'pubblica-venerdi.yml',       quando: r => r.weekday === 'Fri' && r.hour === 11 && r.slot === 0,
+  venerdi:  { workflow: 'pubblica-venerdi.yml',       quando: r => r.weekday === 'Fri' && r.hour === 9  && r.slot === 0,
               inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },
-  extra:    { workflow: 'pubblica-extra.yml',         quando: r => r.hour === 11 && r.slot === 0,
+  extra:    { workflow: 'pubblica-extra.yml',         quando: r => r.hour === 9  && r.slot === 0,
               inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },
   stories:  { workflow: 'pubblica-stories.yml',       quando: r => r.hour === 9  && r.slot === 30,
               inputs: o => ({ dry_run: String(o.dry), force: String(o.force) }) },

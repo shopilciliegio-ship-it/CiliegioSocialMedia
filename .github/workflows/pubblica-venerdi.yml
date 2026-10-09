@@ -1,7 +1,7 @@
 name: Pubblica social del venerdì
 
 on:
-  # Lanciato dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) il venerdì alle 11:00 Europe/Rome,
+  # Lanciato dal timer esterno (Cloudflare Worker, timer-cloudflare/worker.js) il venerdì alle 9:00 Europe/Rome,
   # oppure a mano ("Run workflow"). Il post del giorno sta in venerdi.json su Dropbox (vedi pubblica-social.js).
   workflow_dispatch:
     inputs:
