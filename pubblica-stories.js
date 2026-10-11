@@ -296,6 +296,26 @@ async function igPublishStory(igUserId, igToken, imageUrl) {
   return igPublishContainer(api, igUserId, igToken, created.id);
 }
 
+// BLOCCO "PUBBLICAZIONE MENÙ FALLITA": la domenica alle 23:00 il workflow promuovi-menu-settimana.yml
+// (repo Ciliegio-Menu) sposta la bozza da immagini-sito-prossima/ a immagini-sito/ e cancella il manifest
+// settimana.json. Se il manifest della settimana in corso è ANCORA lì, la promozione non è andata a buon
+// fine e immagini-sito/ contiene i menù della settimana scorsa: pubblicarli sarebbe sbagliato, quindi
+// nessuna story. Se il manifest non è leggibile con certezza (rete) NON si blocca: l'assenza del file
+// (404) è il caso normale. Per sbloccare: rilanciare il workflow del menù da GitHub (Run workflow).
+const MENU_MANIFEST_URL = 'https://raw.githubusercontent.com/shopilciliegio-ship-it/Ciliegio-Menu/main/immagini-sito-prossima/settimana.json';
+async function menuNonPromosso(lunedi) {
+  try {
+    const res = await fetch(MENU_MANIFEST_URL + '?t=' + Date.now(), { headers: { 'Cache-Control': 'no-cache' } });
+    if (res.status === 404) return null;
+    if (!res.ok) { console.warn(`⚠️ Manifest bozza menù non leggibile (HTTP ${res.status}) — non blocco.`); return null; }
+    const m = await res.json();
+    return m && m.settimana === lunedi ? m : null;
+  } catch (err) {
+    console.warn(`⚠️ Manifest bozza menù non leggibile (${err.message}) — non blocco.`);
+    return null;
+  }
+}
+
 async function main() {
   if (!FORCE_RUN) {
     // Finestra 9:00–10:59 (non "esattamente le 9"): vedi pubblica-social.js. Il doppio invio è evitato
@@ -328,6 +348,13 @@ async function main() {
     return;
   }
   console.log(`✅ Settimana approvata (${postId}, stato: ${status}).`);
+
+  const bozzaPendente = await menuNonPromosso(currentMondayRome());
+  if (bozzaPendente) {
+    console.error(`⛔⛔ MENÙ DELLA SETTIMANA ${bozzaPendente.settimana} NON PUBBLICATO: la pubblicazione automatica di domenica sera (workflow "Pubblica menù della settimana" in Ciliegio-Menu) non è andata a buon fine, la bozza è ancora in immagini-sito-prossima/. Le immagini in immagini-sito/ sono della settimana scorsa: NESSUNA story pubblicata. Rilancia quel workflow (Run workflow) e poi questa Action.`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Anti doppio invio: con più trigger (timer esterno + cron GitHub di riserva) la story già uscita oggi
   // non va ripubblicata. Una story con errore invece viene ritentata al giro successivo. Anche in dry run
