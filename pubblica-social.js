@@ -379,7 +379,7 @@ async function pubblicaPost(dbxToken, postId, post, segnaPubblicato) {
   if (!fbFatto) {
     try {
       console.log('\n📤 Pubblico su Facebook...');
-      const fbPhotoBuffer = await dropboxDownloadBytes(dbxToken, post.photoFile);
+      const fbPhotoBuffer = await dropboxDownloadBytes(dbxToken, post.fbPhotoFile || post.photoFile); // fbPhotoFile (opzionale): immagine diversa solo per FB, es. la grafica 4:5 di IG
       const fbResult = await fbPublishPhoto(fbPageId, fbToken, fbPhotoBuffer, post.fbText);
       const fbId = fbResult.post_id || fbResult.id;
       console.log(`✅ Facebook pubblicato: id ${fbId}`);
