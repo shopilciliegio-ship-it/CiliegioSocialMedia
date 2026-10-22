@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.27.1',
+    date: '2026-10-22',
+    current: true,
+    description: 'Venerdì/extra: campo opzionale graficaPronta (la foto scelta è già una grafica finita). All’approvazione e nell’anteprima non si sovrappone nessun titolo/logo: IG pubblica la stessa immagine di FB. Primo uso: Festa del Novello 22/10.'
+  },
+  {
     version: '2.27.0',
     date: '2026-10-09',
-    current: true,
+    current: false,
     description: 'Lunedì: nel dettaglio del post nuovo riquadro "Scambia questo post con un altro lunedì" (anche di un altro mese): si scambiano testi FB/IG e foto; la grafica IG si rigenera e i post approvati vanno riapprovati. I lunedì scambiati vengono salvati nel piano anche se mai approvati (campo scambiato). Fix elenco lunedì (la data si legge dal codice del post).'
   },
   {
@@ -1838,7 +1844,9 @@ async function approvaVenerdi(id) {
   showView('calendar');
   showToast('⏳ Genero la grafica IG e preparo il post...');
   try {
-    if (pf.includes('ig')) {
+    if (pf.includes('ig') && p.graficaPronta) {
+      p.graphicFile = p.photoFile; // grafica già finita: niente overlay, IG pubblica la stessa immagine di FB
+    } else if (pf.includes('ig')) {
       const blob = await downloadDropboxImageBlob(p.igPhotoFile || p.photoFile); // igPhotoFile: foto diversa solo per la grafica IG (FB usa photoFile)
       const gp = graficaParams(p);
       const canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
@@ -4062,7 +4070,12 @@ async function generaGraficaIG(id, silent = false) {
     const idx = rot ? rot.numero : [...p.id].reduce((a,c) => a + c.charCodeAt(0), 0);
     const colore = _coloreGraficaPerIndice(idx);
     const gp = (p.recurringType === 'venerdi' || p.recurringType === 'extra') ? graficaParams(p) : { titolo, colore };
-    const canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
+    let canvas;
+    if (p.graficaPronta) { // grafica già finita: anteprima senza overlay
+      const bmp = await createImageBitmap(blob);
+      canvas = document.createElement('canvas'); canvas.width = bmp.width; canvas.height = bmp.height;
+      canvas.getContext('2d').drawImage(bmp, 0, 0);
+    } else canvas = await disegnaGraficaIG(blob, gp.titolo, gp.colore);
     const container = document.getElementById('ig-graphic-preview');
     if (!container) return;
     container.innerHTML = '';
