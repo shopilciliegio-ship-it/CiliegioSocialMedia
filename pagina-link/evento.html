@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Festa del Vino Novello e dell'Olio Nuovo - Il Ciliegio</title>
+<meta name="description" content="Domenica 1 novembre, tutto il giorno: Festa del Vino Novello e dell'Olio Nuovo al Ciliegio, Monteriggioni.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Great+Vibes&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --oro: #DAAA00;
+    --oro-scuro: #B88F00;
+    --crema: #FBF7EE;
+    --testo: #1E1A14;
+    --testo-2: #6B6150;
+    --bianco: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--crema); }
+  body {
+    font-family: 'Lora', Georgia, serif;
+    color: var(--testo);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    -webkit-font-smoothing: antialiased;
+  }
+  .fascia { width: 100%; height: 8px; background: var(--oro); }
+  main {
+    width: 100%;
+    max-width: 460px;
+    padding: 40px 20px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+  }
+  .logo { width: 100%; max-width: 300px; height: auto; display: block; }
+  .corsivo {
+    font-family: 'Great Vibes', cursive;
+    font-size: 30px;
+    color: var(--oro-scuro);
+    margin: 22px 0 4px;
+    text-align: center;
+  }
+  .sotto {
+    font-size: 14px;
+    color: var(--testo-2);
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  nav { width: 100%; display: flex; flex-direction: column; gap: 14px; }
+  .bottone {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 16px 20px;
+    background: var(--bianco);
+    border: 1.5px solid var(--oro);
+    border-radius: 14px;
+    color: var(--testo);
+    text-decoration: none;
+    box-shadow: 0 2px 8px rgba(30, 26, 20, 0.06);
+    transition: background .15s, color .15s, transform .15s;
+  }
+  .bottone:hover, .bottone:focus-visible { background: var(--oro); color: var(--bianco); transform: translateY(-1px); outline: none; }
+  .bottone:hover .icona, .bottone:focus-visible .icona { background: var(--bianco); color: var(--oro-scuro); }
+  .bottone:hover .en, .bottone:focus-visible .en { color: var(--bianco); }
+  .icona {
+    flex: 0 0 44px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--oro);
+    color: var(--bianco);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .icona svg { width: 22px; height: 22px; }
+  .testi { display: flex; flex-direction: column; min-width: 0; }
+  .it { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 16px; letter-spacing: .04em; }
+  .en { font-size: 13px; font-style: italic; color: var(--testo-2); margin-top: 2px; transition: color .15s; }
+  .bottone.evento { background: var(--oro); border-color: var(--oro-scuro); box-shadow: 0 4px 14px rgba(184,143,0,.35); }
+  .bottone.evento .icona { background: var(--bianco); color: var(--oro-scuro); }
+  .bottone.evento .en { color: var(--testo); }
+  .bottone.evento .it.sub { font-size: 13px; font-weight: 400; margin-top: 1px; }
+  .bottone.evento:hover, .bottone.evento:focus-visible { background: var(--oro-scuro); color: var(--bianco); }
+  .bottone.evento:hover .en, .bottone.evento:focus-visible .en { color: var(--bianco); }
+  footer {
+    width: 100%;
+    max-width: 460px;
+    padding: 8px 20px 32px;
+    text-align: center;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--testo-2);
+  }
+  footer .nome { font-family: 'Cinzel', Georgia, serif; color: var(--testo); letter-spacing: .05em; }
+  footer a { color: var(--testo-2); text-decoration: none; }
+  main { padding-top: 28px; }
+  .hero { width: 100%; height: auto; border-radius: 14px; display: block; box-shadow: 0 4px 16px rgba(30,26,20,.18); }
+  h1 { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 20px; letter-spacing: .05em; text-align: center; margin: 22px 0 6px; text-transform: uppercase; line-height: 1.35; }
+  .quando { font-family: 'Cinzel', Georgia, serif; color: var(--oro-scuro); font-size: 15px; letter-spacing: .08em; text-align: center; margin-bottom: 22px; text-transform: uppercase; }
+  .scheda { width: 100%; background: var(--bianco); border: 1.5px solid var(--oro); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(30,26,20,.06); }
+  .scheda h2 { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 15px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 8px; display:flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .scheda h2 .prezzo { color: var(--oro-scuro); white-space: nowrap; }
+  .scheda p { font-size: 15px; line-height: 1.55; }
+  .scheda p.en { font-size: 13px; font-style: italic; color: var(--testo-2); margin-top: 6px; }
+  .scheda ul { list-style: none; margin: 6px 0 4px; }
+  .scheda li { font-size: 15px; line-height: 1.5; padding: 3px 0 3px 22px; position: relative; }
+  .scheda li::before { content: ''; position: absolute; left: 4px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--oro); }
+  .stefis { display: flex; gap: 14px; align-items: center; }
+  .stefis > div { min-width: 0; flex: 1; }
+  .stefis h2 { flex-wrap: wrap; row-gap: 2px; }
+  .stefis img { width: 72px; height: 72px; border-radius: 12px; flex: 0 0 72px; }
+  nav.azioni { margin-top: 6px; }
+  .indietro { margin-top: 18px; font-size: 14px; }
+  .indietro a { color: var(--testo-2); }
+</style>
+</head>
+<body>
+  <div class="fascia"></div>
+  <main>
+    <img class="hero" src="festa-novello.jpg" alt="Festa del Vino Novello e dell'Olio Nuovo - domenica 1 novembre al Ciliegio" width="1080" height="1350">
+    <h1>Festa del Vino Novello<br>e dell'Olio Nuovo</h1>
+    <p class="quando">Domenica 1 novembre · tutto il giorno</p>
+
+    <section class="scheda">
+      <h2>Ingresso libero</h2>
+      <p>Senza prenotazione: vieni quando vuoi, per tutta la giornata. Parcheggio abbondante e gratuito.</p>
+      <p class="en">Free entry, no booking needed. Plenty of free parking.</p>
+    </section>
+
+    <section class="scheda">
+      <h2>Gli assaggi <span class="prezzo">10 € a persona</span></h2>
+      <ul>
+        <li>Degustazione dei vini</li>
+        <li>Bruschetta con l'olio nuovo</li>
+        <li>Affettati, pasta e dolci</li>
+      </ul>
+      <p class="en">€10 per person: wine tasting, bruschetta with new olive oil, cold cuts, pasta and desserts.</p>
+    </section>
+
+    <section class="scheda">
+      <div class="stefis">
+        <img src="stefis.jpg" alt="Stefi's Animation">
+        <div>
+          <h2>Per i bambini <span class="prezzo">5 € sotto i 10 anni</span></h2>
+          <p>Animazione dalle 15 alle 18 a cura di Stefi's Animation.</p>
+        </div>
+      </div>
+      <p class="en">Kids under 10 pay €5. Entertainment for children from 3 to 6 pm.</p>
+    </section>
+
+    <section class="scheda">
+      <h2>Il ristorante</h2>
+      <p>Aperto come sempre, a parte: menù fisso e alla carta. Per il tavolo ti consigliamo di prenotare.</p>
+      <p class="en">The restaurant is open separately, set menu and à la carte. Booking recommended.</p>
+    </section>
+
+    <nav class="azioni">
+      <a class="bottone" href="https://maps.app.goo.gl/FzSb1t8RsJjGynoo6">
+        <span class="icona" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+        </span>
+        <span class="testi"><span class="it">Come arrivare</span><span class="en">Directions</span></span>
+      </a>
+      <a class="bottone" href="https://www.google.com/maps/reserve/v/dine/c/0OY7ibiDkUw?hl=it-IT">
+        <span class="icona" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="m9 15 2 2 4-4"/></svg>
+        </span>
+        <span class="testi"><span class="it">Prenota il tavolo</span><span class="en">Book a table</span></span>
+      </a>
+      <a class="bottone" href="https://wa.me/393291767348">
+        <span class="icona" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2c0 1.3.9 2.5 1 2.7.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>
+        </span>
+        <span class="testi"><span class="it">Scrivici su WhatsApp</span><span class="en">Chat with us</span></span>
+      </a>
+    </nav>
+    <p class="indietro"><a href="link-con-evento.html">← Torna ai link</a></p>
+  </main>
+<footer>
+    <div class="nome">Azienda Agricola Il Ciliegio</div>
+    <div>Via Uopini 94 · 53035 Monteriggioni (SI)</div>
+    <div><a href="tel:+390577309055">0577 309055</a> · <a href="https://www.ilciliegio.com">ilciliegio.com</a></div>
+  </footer>
+</body>
+</html>

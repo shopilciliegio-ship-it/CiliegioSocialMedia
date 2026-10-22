@@ -1,0 +1,45 @@
+<!-- COMPONENTE 1 (HTML) — da mettere in cima al Contenitore, sopra "I menù della settimana".
+     Contiene lo stile di tutto + il pulsante dorato. Temporaneo: togliere dopo il 1 novembre 2026. -->
+<style>
+  #festa, .vai-festa { --oro:#DAAA00; --oro-scuro:#B88F00; --testo:#1E1A14; --testo-2:#6B6150; --bianco:#FFFFFF; }
+  #festa { width: 100%; margin: 44px 0 0; padding: 0 0 32px; font-family: 'Lora', Georgia, serif; color: var(--testo); box-sizing: border-box; }
+  #festa *, .vai-festa { box-sizing: border-box; }
+  #festa .hero { width: 100%; height: auto; border-radius: 14px; display: block; box-shadow: 0 4px 16px rgba(30,26,20,.18); }
+  #festa h1 { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 20px; letter-spacing: .05em; text-align: center; margin: 22px 0 6px; text-transform: uppercase; line-height: 1.35; }
+  #festa .quando { font-family: 'Cinzel', Georgia, serif; color: var(--oro-scuro); font-size: 15px; letter-spacing: .08em; text-align: center; margin-bottom: 22px; text-transform: uppercase; }
+  #festa .scheda { width: 100%; background: var(--bianco); border: 1.5px solid var(--oro); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(30,26,20,.06); }
+  #festa .scheda h2 { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 15px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 8px; display:flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  #festa .scheda h2 .prezzo { color: var(--oro-scuro); white-space: nowrap; }
+  #festa .scheda p { font-size: 15px; line-height: 1.55; }
+  #festa .scheda p.en { font-size: 13px; font-style: italic; color: var(--testo-2); margin-top: 6px; }
+  #festa .scheda ul { list-style: none; margin: 6px 0 4px; }
+  #festa .scheda li { font-size: 15px; line-height: 1.5; padding: 3px 0 3px 22px; position: relative; }
+  #festa .scheda li::before { content: ''; position: absolute; left: 4px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--oro); }
+  #festa .stefis { display: flex; gap: 14px; align-items: center; }
+  #festa .stefis > div { min-width: 0; flex: 1; }
+  #festa .stefis h2 { flex-wrap: wrap; row-gap: 2px; }
+  #festa .stefis img { width: 72px; height: 72px; border-radius: 12px; flex: 0 0 72px; }
+  #festa nav.azioni { margin-top: 6px; }
+    .festa-titolo { font-family: 'Great Vibes', cursive; font-size: 30px; color: var(--oro-scuro); text-align: center; margin-bottom: 14px; }
+  #festa .bottone { display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px 20px; background: var(--bianco); border: 1.5px solid var(--oro); border-radius: 14px; color: var(--testo); text-decoration: none; box-shadow: 0 2px 8px rgba(30,26,20,.06); }
+  #festa .bottone:hover { background: var(--oro); color: var(--bianco); }
+  #festa .icona { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%; background: var(--oro); color: var(--bianco); display: flex; align-items: center; justify-content: center; }
+  #festa .icona svg { width: 22px; height: 22px; }
+  #festa .testi { display: flex; flex-direction: column; min-width: 0; }
+  #festa .it { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 16px; letter-spacing: .04em; }
+  #festa .en { font-size: 13px; font-style: italic; color: var(--testo-2); margin-top: 2px; }
+  html { scroll-behavior: smooth; }
+  #festa { scroll-margin-top: 16px; }
+  .vai-festa { display: flex; align-items: center; gap: 16px; width: 100%; margin: 0 0 14px; padding: 16px 20px; background: var(--oro); border: 1.5px solid var(--oro-scuro); border-radius: 14px; color: var(--testo); text-decoration: none; box-shadow: 0 4px 14px rgba(184,143,0,.35); }
+  .vai-festa:hover { background: var(--oro-scuro); color: var(--bianco); }
+  .vai-festa .icona { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%; background: var(--bianco); color: var(--oro-scuro); display: flex; align-items: center; justify-content: center; }
+  .vai-festa .icona svg { width: 22px; height: 22px; }
+  .vai-festa .testi { display: flex; flex-direction: column; min-width: 0; }
+  .vai-festa .it { font-family: 'Cinzel', Georgia, serif; font-weight: 600; font-size: 16px; letter-spacing: .04em; }
+  .vai-festa .it.sub { font-size: 13px; font-weight: 400; margin-top: 1px; }
+  .vai-festa .en { font-size: 13px; font-style: italic; margin-top: 2px; }
+</style>
+<a class="vai-festa" href="#festa">
+  <span class="icona" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l-.6 7a3.4 3.4 0 0 1-6.8 0L8 3Z"/><path d="M12 13.5V20M8.5 20h7"/></svg></span>
+  <span class="testi"><span class="it">Festa del Vino Novello</span><span class="it sub">e dell'Olio Nuovo · 1 novembre</span><span class="en">Scopri il programma · See the program ↓</span></span>
+</a>
