@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.27.2',
+    date: '2026-10-26',
+    current: true,
+    description: 'Lunedì: nello scambio tra lunedì il lunedì di oggi non compariva (l\'id del post porta la data del giorno prima, quindi sembrava già passato). Ora l\'elenco confronta la data vera del lunedì.'
+  },
+  {
     version: '2.27.1',
     date: '2026-10-22',
-    current: true,
+    current: false,
     description: 'Venerdì/extra: campo opzionale graficaPronta (la foto scelta è già una grafica finita). All’approvazione e nell’anteprima non si sovrappone nessun titolo/logo: IG pubblica la stessa immagine di FB. Primo uso: Festa del Novello 22/10.'
   },
   {
@@ -1916,10 +1922,18 @@ function fridaySwapOptions(p) {
     .join('');
 }
 
+// L'id del reminder porta la data in UTC (toISOString), cioè il giorno PRIMA del lunedì in fuso italiano:
+// per confrontarla con oggi serve il lunedì vero (id + 1 giorno).
+function reminderRealDateStr(p) {
+  const t = new Date(p.id.slice(2, 12) + 'T12:00:00');
+  t.setDate(t.getDate() + 1);
+  return localDateStr(t);
+}
+
 // Elenco dei lunedì con cui si può scambiare il post (non pubblicati, futuri, anche di altri mesi).
 function mondaySwapOptions(p) {
   return STATE.recurringPosts
-    .filter(x => x.recurringType === 'reminder' && x.id !== p.id && x.status !== 'published' && x.id.slice(2, 12) >= localDateStr(new Date()))
+    .filter(x => x.recurringType === 'reminder' && x.id !== p.id && x.status !== 'published' && reminderRealDateStr(x) >= localDateStr(new Date()))
     .slice(0, 30)
     .map(x => `<option value="${x.id}">${WEEKDAY_NAMES_IT[0]} ${x.date} ${x.month.split(' ')[0].toLowerCase()} — ${_escHtml((x.photoName || 'senza foto').replace(/\.[a-z]+$/i, ''))}${x.status === 'approvato' ? ' (approvato)' : ''}</option>`)
     .join('');
