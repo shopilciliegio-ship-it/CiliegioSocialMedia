@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.27.3',
+    date: '2026-10-29',
+    current: true,
+    description: 'Venerdì: il flag graficaPronta (grafica già finita, senza overlay) ora viene salvato e riletto negli override di piano.json, prima funzionava solo per i post extra. Primo uso: collage olive e olio del 30/10.'
+  },
+  {
     version: '2.27.2',
     date: '2026-10-26',
-    current: true,
+    current: false,
     description: 'Lunedì: nello scambio tra lunedì il lunedì di oggi non compariva (l\'id del post porta la data del giorno prima, quindi sembrava già passato). Ora l\'elenco confronta la data vera del lunedì.'
   },
   {
@@ -2184,6 +2190,7 @@ function extractRecurringOverrides() {
       ov[p.id] = { fbText: p.fbText || '', igText: p.igText || '', status: p.status, photoHint: p.photoHint || '', photoFile: p.photoFile || '', photoName: p.photoName || '', graphicFile: p.graphicFile || '' };
       if (kindCambiato) ov[p.id].fridayKind = p.fridayKind;
       if (p.igPhotoFile) ov[p.id].igPhotoFile = p.igPhotoFile;
+      if (p.graficaPronta) ov[p.id].graficaPronta = true;
       if (p.title !== def.title) ov[p.id].title = p.title;
       if (p.desc !== def.desc) ov[p.id].desc = p.desc;
       if ((p.graficaTitolo || '') !== def.graficaTitolo) ov[p.id].graficaTitolo = p.graficaTitolo || '';
@@ -2225,6 +2232,7 @@ function applyRecurringOverrides(source) {
     if (o.photoHint)                      p.photoHint = o.photoHint;
     if (o.photoFile)                      p.photoFile = o.photoFile;
     if (o.igPhotoFile)                    p.igPhotoFile = o.igPhotoFile;
+    if (o.graficaPronta)                  p.graficaPronta = true;
     if (o.photoName)                      p.photoName = o.photoName;
     if (o.graphicFile)                    p.graphicFile = o.graphicFile;
     if (o.scambiato)                      p.scambiato = true;
@@ -4278,6 +4286,7 @@ function selectPhoto(postId, path) {
 
 // Venerdì/extra approvato con foto cambiata: la grafica e la voce nel file dell'Action non valgono più → torna "Pronto".
 function fotoCambiataVE(p) {
+  p.graficaPronta = false;
   p.igPhotoFile = ''; // se si sceglie un'altra foto, la foto speciale per la grafica IG decade
   if ((p.recurringType !== 'venerdi' && p.recurringType !== 'extra') || p.status !== 'approvato') return;
   p.status = 'ready'; p.graphicFile = '';
