@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
-    version: '2.28.0',
+    version: '2.28.1',
     date: '2026-11-13',
     current: true,
+    description: 'Grafica IG del venerdì: il colore del titolo ora è quello del lunedì della stessa settimana (prima il venerdì aveva una rotazione di colori propria: 13/11 usciva rossa invece del verde del lunedì). Vale anche per i post extra, come già prima.'
+  },
+  {
+    version: '2.28.0',
+    date: '2026-11-13',
+    current: false,
     description: 'Venerdì/extra: (1) nel dettaglio del post, sotto "Foto abbinata", nuova riga "Foto diversa per Instagram" (Scegli/Cambia/✕) per usare due immagini diverse per FB e IG (prima si poteva solo a mano nel file); (2) titolo della grafica Instagram: se in una riga il carattere scende sotto 96 px (titolo lungo) va in automatico su due righe, centrate e più grandi (anche in grafica-venerdi.js e nel reminder del lunedì). Primo uso: "Olio nuovo su tutto" 13/11 (FB collage col titolo, IG collage senza titolo).'
   },
   {
@@ -1605,9 +1611,8 @@ function weekColor(dateStr) {
 // Titolo (sempre col "!") e colore della grafica IG di un venerdì o di un extra: stessi valori per anteprima e approvazione.
 function graficaParams(p) {
   const titolo = (p.graficaTitolo || fridayGraphicTitle(p.title)).replace(/!+$/, '') + '!';
-  const colore = p.recurringType === 'extra'
-    ? (p.graficaColore || weekColor(p.dateStr))
-    : _coloreGraficaPerIndice(Math.round(_daysBetween(FRIDAY_START, p.dateStr) / 7) + 3);
+  // Colore = quello del lunedì della stessa settimana (venerdì ed extra); graficaColore lo forza a mano. (v2.28.1: prima il venerdì aveva una rotazione sua)
+  const colore = p.graficaColore || weekColor(p.dateStr);
   return { titolo, colore };
 }
 
