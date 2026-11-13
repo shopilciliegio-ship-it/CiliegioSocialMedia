@@ -34,13 +34,29 @@ async function disegna(foto, titolo, colore) {
 
   const pad = 64, maxW = W - pad * 2, testo = titolo.toUpperCase().replace(/!*$/, '!'); // il titolo ha SEMPRE il punto esclamativo (regola di Luca)
   ctx.textBaseline = 'alphabetic';
-  ctx.font = '100px "Titan One"';
-  const fontSize = Math.round(100 * (maxW / ctx.measureText(testo).width));
+  // Una riga da bordo a bordo; sotto MIN_UNA_RIGA px (titolo lungo) SEMPRE due righe più grandi (regola di Luca 13/11).
+  const MIN_UNA_RIGA = 96, MAX_FONT = 150;
+  const misura = (t, px) => { ctx.font = `${px}px "Titan One"`; return ctx.measureText(t).width; };
+  let righe = [testo], fontSize = Math.round(100 * (maxW / misura(testo, 100)));
+  if (fontSize < MIN_UNA_RIGA && testo.includes(' ')) {
+    const parole = testo.split(' ');
+    let migliore = null;
+    for (let i = 1; i < parole.length; i++) {
+      const r1 = parole.slice(0, i).join(' '), r2 = parole.slice(i).join(' ');
+      const w = Math.max(misura(r1, 100), misura(r2, 100));
+      if (!migliore || w < migliore.w) migliore = { w, righe: [r1, r2] };
+    }
+    righe = migliore.righe;
+    fontSize = Math.min(MAX_FONT, Math.round(100 * (maxW / migliore.w)));
+  }
   ctx.font = `${fontSize}px "Titan One"`;
-  const y = H - pad - fontSize * 0.34;
-  ctx.lineJoin = 'round'; ctx.lineWidth = fontSize * 0.13; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-  ctx.strokeText(testo, pad, y);
-  ctx.fillStyle = colore; ctx.fillText(testo, pad, y);
+  ctx.lineJoin = 'round'; ctx.lineWidth = fontSize * 0.13; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.fillStyle = colore;
+  const yUltima = H - pad - fontSize * 0.34;
+  righe.forEach((riga, i) => {
+    const y = yUltima - (righe.length - 1 - i) * fontSize * 1.02;
+    const x = righe.length > 1 ? (W - ctx.measureText(riga).width) / 2 : pad;
+    ctx.strokeText(riga, x, y); ctx.fillText(riga, x, y);
+  });
   return cv.encode('jpeg', 92);
 }
 

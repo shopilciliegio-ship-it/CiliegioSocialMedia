@@ -554,9 +554,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 ═══════════════════════════════════════════════ */
 const VERSIONS = [
   {
+    version: '2.28.0',
+    date: '2026-11-13',
+    current: true,
+    description: 'Venerdì/extra: (1) nel dettaglio del post, sotto "Foto abbinata", nuova riga "Foto diversa per Instagram" (Scegli/Cambia/✕) per usare due immagini diverse per FB e IG (prima si poteva solo a mano nel file); (2) titolo della grafica Instagram: se in una riga il carattere scende sotto 96 px (titolo lungo) va in automatico su due righe, centrate e più grandi (anche in grafica-venerdi.js e nel reminder del lunedì). Primo uso: "Olio nuovo su tutto" 13/11 (FB collage col titolo, IG collage senza titolo).'
+  },
+  {
     version: '2.27.3',
     date: '2026-10-29',
-    current: true,
+    current: false,
     description: 'Venerdì: il flag graficaPronta (grafica già finita, senza overlay) ora viene salvato e riletto negli override di piano.json, prima funzionava solo per i post extra. Primo uso: collage olive e olio del 30/10.'
   },
   {
@@ -3212,6 +3218,15 @@ function openPostDetail(id) {
           <button class="btn sm" onclick="openPhotoPicker('${id}')">Scegli dall'archivio Dropbox</button>
         </div>`}
       ${p.photoHint ? `<div style="margin-top:8px; background:var(--surface2); border-radius:var(--radius); padding:8px 12px; font-size:12px; color:var(--text2); line-height:1.5">💡 Suggerimento AI: ${p.photoHint}</div>` : ''}
+      ${isVE && p.photoFile ? `
+      <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border)">
+        <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:4px">📸 Foto diversa per Instagram <span style="font-weight:400">(facoltativa: se vuota, Instagram usa la stessa foto di Facebook; la grafica con titolo parte da questa)</span></div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <span style="font-size:13px; color:var(--text2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${p.igPhotoFile ? _escHtml(p.igPhotoFile.split('/').pop()) : 'stessa di Facebook'}</span>
+          <button class="btn sm" onclick="openPhotoPicker('${id}', 'ig')">${p.igPhotoFile ? 'Cambia' : 'Scegli'}</button>
+          ${p.igPhotoFile ? `<button class="btn sm danger" onclick="removeIgPhoto('${id}')">✕</button>` : ''}
+        </div>
+      </div>` : ''}
     </div>
     ${p.photoFile ? `
     <div class="form-group" style="margin-bottom:16px">
@@ -4058,19 +4073,35 @@ async function disegnaGraficaIG(photoBlob, titolo, colore) {
   const maxW = IG_GRAPHIC_W - pad * 2;
   const testo = titolo.toUpperCase();
   ctx.textBaseline = 'alphabetic';
-  const refSize = 100;
-  ctx.font = `${refSize}px "Titan One", sans-serif`;
-  const measured = ctx.measureText(testo).width;
-  const fontSize = Math.round(refSize * (maxW / measured));
+  // Una riga da bordo a bordo; se così il carattere scende sotto IG_TITOLO_MIN_UNA_RIGA px
+  // (titolo lungo) il titolo va SEMPRE su due righe, più grandi (regola di Luca 13/11).
+  const IG_TITOLO_MIN_UNA_RIGA = 96, IG_TITOLO_MAX = 150;
+  const misura = (t, px) => { ctx.font = `${px}px "Titan One", sans-serif`; return ctx.measureText(t).width; };
+  const fitPx = (t) => Math.round(100 * (maxW / misura(t, 100)));
+  let righe = [testo], fontSize = fitPx(testo);
+  if (fontSize < IG_TITOLO_MIN_UNA_RIGA && testo.includes(' ')) {
+    const parole = testo.split(' ');
+    let migliore = null;
+    for (let i = 1; i < parole.length; i++) { // divisione che rende più stretta la riga più larga
+      const a = parole.slice(0, i).join(' '), b = parole.slice(i).join(' ');
+      const w = Math.max(misura(a, 100), misura(b, 100));
+      if (!migliore || w < migliore.w) migliore = { w, righe: [a, b] };
+    }
+    righe = migliore.righe;
+    fontSize = Math.min(IG_TITOLO_MAX, Math.round(100 * (maxW / migliore.w)));
+  }
   ctx.font = `${fontSize}px "Titan One", sans-serif`;
-
-  const y = IG_GRAPHIC_H - pad - fontSize * 0.34; // "un attimo più alta" del bordo
   ctx.lineJoin = 'round';
   ctx.lineWidth = fontSize * 0.13;
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-  ctx.strokeText(testo, pad, y);
   ctx.fillStyle = colore;
-  ctx.fillText(testo, pad, y);
+  const yUltima = IG_GRAPHIC_H - pad - fontSize * 0.34; // "un attimo più alta" del bordo
+  righe.forEach((riga, i) => {
+    const y = yUltima - (righe.length - 1 - i) * fontSize * 1.02;
+    const x = righe.length > 1 ? (IG_GRAPHIC_W - ctx.measureText(riga).width) / 2 : pad;
+    ctx.strokeText(riga, x, y);
+    ctx.fillText(riga, x, y);
+  });
 
   return canvas;
 }
@@ -4206,7 +4237,8 @@ function setPhotoCatMain(cat) {
 }
 
 // Apre un modal per scegliere una foto da associare al post `postId`
-async function openPhotoPicker(postId) {
+async function openPhotoPicker(postId, target) {
+  window._photoPickerTarget = target || ''; // 'ig' = scelta della foto solo per Instagram
   openModal('📷 Scegli una foto dall\'archivio', `<div id="picker-wrap"><div class="photo-empty"><div class="photo-empty-icon">⏳</div>Caricamento...</div></div>`);
   const post = (findPostById(postId) || {}).post;
   let photos, cartelle = DROPBOX_PHOTO_FOLDER;
@@ -4275,6 +4307,16 @@ function selectPhoto(postId, path) {
   if (!photo) return;
   const found = findPostById(postId);
   if (!found) return;
+  if (window._photoPickerTarget === 'ig') { // foto solo per Instagram: la foto di Facebook resta com'è
+    found.post.igPhotoFile = photo.path_lower;
+    igFotoCambiata(found.post);
+    window._photoPickerTarget = '';
+    closeModalDirect();
+    showToast(`📸 Foto per Instagram: ${photo.name}`);
+    openPostDetail(postId);
+    autoSync();
+    return;
+  }
   found.post.photoFile = photo.path_lower;
   found.post.photoName = photo.name;
   fotoCambiataVE(found.post);
@@ -4292,6 +4334,23 @@ function fotoCambiataVE(p) {
   p.status = 'ready'; p.graphicFile = '';
   syncEntryFor(p).then(() => showToast('↩ Foto cambiata: il post è tornato "Pronto", va riapprovato'))
     .catch(err => showToast('⚠️ Foto cambiata ma l\'approvazione non è stata annullata sul file: ' + err.message));
+}
+
+// Foto IG cambiata/tolta: la grafica già generata non vale più → il post approvato torna "Pronto".
+function igFotoCambiata(p) {
+  p.graficaPronta = false;
+  if ((p.recurringType !== 'venerdi' && p.recurringType !== 'extra') || p.status !== 'approvato') return;
+  p.status = 'ready'; p.graphicFile = '';
+  syncEntryFor(p).then(() => showToast('↩ Foto Instagram cambiata: il post è tornato "Pronto", va riapprovato'))
+    .catch(err => showToast("⚠️ Foto cambiata ma l'approvazione non è stata annullata sul file: " + err.message));
+}
+function removeIgPhoto(postId) {
+  const found = findPostById(postId);
+  if (!found) return;
+  found.post.igPhotoFile = '';
+  igFotoCambiata(found.post);
+  openPostDetail(postId);
+  autoSync();
 }
 
 function removePhoto(postId) {
