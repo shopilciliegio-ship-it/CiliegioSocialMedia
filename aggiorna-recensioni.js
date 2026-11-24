@@ -5,7 +5,7 @@
 // Gira nella GitHub Action .github/workflows/aggiorna-recensioni.yml (ogni giorno + a mano).
 //
 // Segreti/variabili richiesti (una piattaforma senza chiave viene saltata, senza errori):
-//   GOOGLE_PLACES_API_KEY + GOOGLE_PLACE_ID        -> Google (Places API "New": max 5 recensioni per chiamata)
+//   GOOGLE_PLACES_API_KEY (+ GOOGLE_PLACE_ID facoltativo: se manca lo ricava dal CID) -> Google (Places API "New": max 5 recensioni)
 //   TRIPADVISOR_API_KEY   + TRIPADVISOR_LOCATION_ID -> TripAdvisor (Content API: max 5 recensioni)
 // TheFork non ha un'API pubblica per le recensioni: si possono aggiungere a mano in recensioni/manuali.json
 //   [{ "fonte": "TheFork", "autore": "Nome", "stelle": 5, "testo": "...", "data": "2026-11-20", "link": "https://..." }]
@@ -48,9 +48,27 @@ function normalizzaGoogle(json) {
   return { punteggio: json.rating || null, totale: json.userRatingCount || null, items };
 }
 
+// Il link di Google "ludocid=..." è il CID della scheda, non il Place ID che serve all'API. Se GOOGLE_PLACE_ID
+// non è impostato, il Place ID si ricava cercando il nome e scegliendo il risultato con quel CID.
+const GOOGLE_CID = env('GOOGLE_CID') || '17508871207857454496';
+async function trovaPlaceId(key) {
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.googleMapsUri,places.displayName' },
+    body: JSON.stringify({ textQuery: 'Ristorante Agrituristico Il Ciliegio Monteriggioni', languageCode: 'it' }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(`Google (ricerca scheda): ${res.status} ${JSON.stringify(json.error || json).slice(0, 300)}`);
+  const trovato = (json.places || []).find(p => String(p.googleMapsUri || '').includes(`cid=${GOOGLE_CID}`));
+  if (!trovato) throw new Error(`Google: nessun risultato con CID ${GOOGLE_CID} (trovati: ${(json.places || []).map(p => p.displayName && p.displayName.text).join(', ')})`);
+  console.log(`🔎 Scheda Google trovata: ${trovato.displayName && trovato.displayName.text} (${trovato.id})`);
+  return trovato.id;
+}
+
 async function scaricaGoogle() {
-  const key = env('GOOGLE_PLACES_API_KEY'), id = env('GOOGLE_PLACE_ID');
-  if (!key || !id) return null;
+  const key = env('GOOGLE_PLACES_API_KEY');
+  if (!key) return null;
+  const id = env('GOOGLE_PLACE_ID') || await trovaPlaceId(key);
   const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}?languageCode=it`, {
     headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'rating,userRatingCount,reviews' },
   });
