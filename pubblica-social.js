@@ -329,6 +329,27 @@ async function main() {
 
 // Pubblicazione vera e propria (FB foto pulita + IG grafica o foto), comune a lunedì e venerdì.
 // segnaPubblicato(): cosa scrivere quando entrambe le piattaforme sono uscite.
+
+// Dal 24/11/2026: dopo ogni post Facebook uscito, salva testo + foto + link in ultimo-post/ (cartella del repo).
+// Il workflow la committa (step "Salva ultimo post per il sito") e il sito nuovo la legge da raw.githubusercontent.
+// Mai bloccante: se fallisce, il post è comunque uscito.
+function salvaUltimoPost(post, fbId, imageBuffer) {
+  try {
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, 'ultimo-post');
+    fs.mkdirSync(dir, { recursive: true });
+    // Testo pulito per il sito: via hashtag, righe con link, righe vuote doppie.
+    const righe = String(post.fbText || '').split(/\r?\n/).filter(r => !/https?:\/\/|^\s*#/.test(r));
+    let testo = righe.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (testo.length > 320) testo = testo.slice(0, 320).replace(/\s+\S*$/, '') + '…';
+    fs.writeFileSync(path.join(dir, 'foto.jpg'), imageBuffer);
+    fs.writeFileSync(path.join(dir, 'ultimo-post.json'), JSON.stringify({
+      testo, link: `https://www.facebook.com/${fbId}`, foto: 'foto.jpg', data: new Date().toISOString(), fbId,
+    }, null, 2) + '\n');
+    console.log('📝 Ultimo post salvato per il sito (ultimo-post/).');
+  } catch (e) { console.warn(`⚠️ Salvataggio ultimo post per il sito non riuscito (non blocca): ${e.message}`); }
+}
+
 async function pubblicaPost(dbxToken, postId, post, segnaPubblicato) {
   const usaFotoSemplicePerIG = !post.graphicFile;
   console.log(`✅ Post approvato trovato.`);
@@ -384,6 +405,7 @@ async function pubblicaPost(dbxToken, postId, post, segnaPubblicato) {
       const fbId = fbResult.post_id || fbResult.id;
       console.log(`✅ Facebook pubblicato: id ${fbId}`);
       await registraEsito(dbxToken, postId, 'fb', { ok: true, id: fbId, at: new Date().toISOString() }, 'Facebook');
+      salvaUltimoPost(post, fbId, fbPhotoBuffer);
     } catch (err) {
       errori++;
       console.error(`❌ Facebook fallito: ${err.message}`);

@@ -30,6 +30,8 @@ concurrency:
 jobs:
   pubblica:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # per salvare ultimo-post/ (sito nuovo)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,3 +51,14 @@ jobs:
           FB_GIA_PUBBLICATO: ${{ github.event_name == 'workflow_dispatch' && inputs.fb_gia_pubblicato || 'false' }}
           DATA_POST: ${{ inputs.data_post }}
         run: node pubblica-social.js
+      - name: Salva ultimo post per il sito
+        if: ${{ !cancelled() }}
+        run: |
+          git config user.name "ciliegio-bot"
+          git config user.email "noreply@users.noreply.github.com"
+          git add ultimo-post
+          if ! git diff --cached --quiet; then
+            git commit -m "Ultimo post per il sito"
+            git pull --rebase -q || true
+            git push -q || echo "push ultimo post non riuscito (non blocca)"
+          fi
