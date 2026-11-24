@@ -344,7 +344,8 @@ function salvaUltimoPost(post, fbId, imageBuffer) {
     if (testo.length > 320) testo = testo.slice(0, 320).replace(/\s+\S*$/, '') + '…';
     fs.writeFileSync(path.join(dir, 'foto.jpg'), imageBuffer);
     fs.writeFileSync(path.join(dir, 'ultimo-post.json'), JSON.stringify({
-      testo, link: `https://www.facebook.com/${fbId}`, foto: 'foto.jpg', data: new Date().toISOString(), fbId,
+      // fbId = "IDPAGINA_IDPOST": il link diretto al post è facebook.com/IDPAGINA/posts/IDPOST
+      testo, link: String(fbId).includes('_') ? `https://www.facebook.com/${String(fbId).split('_')[0]}/posts/${String(fbId).split('_')[1]}` : `https://www.facebook.com/${fbId}`, foto: 'foto.jpg', data: new Date().toISOString(), fbId,
     }, null, 2) + '\n');
     console.log('📝 Ultimo post salvato per il sito (ultimo-post/).');
   } catch (e) { console.warn(`⚠️ Salvataggio ultimo post per il sito non riuscito (non blocca): ${e.message}`); }
