@@ -1,0 +1,40 @@
+name: Aggiorna recensioni per il sito
+
+on:
+  # Ogni giorno alle 6:15 Europe/Rome circa (05:15 UTC) e a mano. Il cron di GitHub può ritardare di ore:
+  # per le recensioni non è un problema.
+  schedule:
+    - cron: '15 5 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: aggiorna-recensioni
+  cancel-in-progress: false
+
+jobs:
+  recensioni:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # per salvare recensioni/recensioni.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scarica le recensioni positive (Google, TripAdvisor)
+        env:
+          GOOGLE_PLACES_API_KEY:    ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          GOOGLE_PLACE_ID:          ${{ secrets.GOOGLE_PLACE_ID }}
+          TRIPADVISOR_API_KEY:      ${{ secrets.TRIPADVISOR_API_KEY }}
+          TRIPADVISOR_LOCATION_ID:  ${{ secrets.TRIPADVISOR_LOCATION_ID }}
+        run: node aggiorna-recensioni.js
+      - name: Salva per il sito
+        run: |
+          git config user.name "ciliegio-bot"
+          git config user.email "noreply@users.noreply.github.com"
+          git add recensioni
+          if ! git diff --cached --quiet; then
+            git commit -m "Recensioni per il sito"
+            git pull --rebase -q || true
+            git push -q || echo "push recensioni non riuscito (non blocca)"
+          fi
