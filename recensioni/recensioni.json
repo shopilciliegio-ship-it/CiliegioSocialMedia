@@ -1,5 +1,5 @@
 {
-  "aggiornato": "2026-11-25T10:57:56.045Z",
+  "aggiornato": "2026-11-25T10:59:07.284Z",
   "punteggi": {
     "Google": {
       "punteggio": 4.6,
@@ -12,12 +12,36 @@
   },
   "items": [
     {
+      "fonte": "TripAdvisor",
+      "autore": "carlol903",
+      "stelle": 4,
+      "testo": "Excellent restaurant that offers typical Tuscan cuisine dishes expertly prepared. Giving an extra boost is the very attentive, jovial, and courteous service staff who work like a well-oiled machine. Not least the price, which, compared to the quality of the food, leaves you fully satisfied; not for nothing, as soon as…",
+      "data": "2026-11-19T15:59:28.21Z",
+      "link": "https://www.tripadvisor.com/ShowUserReviews-g227886-d2369638-r1086051164-Il_Ciliegio_Ristorante-Monteriggioni_Tuscany.html"
+    },
+    {
+      "fonte": "TripAdvisor",
+      "autore": "S7226YWalessandrom",
+      "stelle": 5,
+      "testo": "Welcoming place, excellent food and Mirko the waiter, brilliant, nice and prepared. I will definitely go back.",
+      "data": "2026-11-14T16:52:39.742Z",
+      "link": "https://www.tripadvisor.com/ShowUserReviews-g227886-d2369638-r1085494653-Il_Ciliegio_Ristorante-Monteriggioni_Tuscany.html"
+    },
+    {
       "fonte": "Google",
       "autore": "Francesco Perniconi",
       "stelle": 5,
       "testo": "Ieri abbiamo festeggiato qui la Cresima di mia figlia e non potevamo fare scelta migliore! ​L'ambiente è davvero incantevole e la location è a dir poco perfetta: immersa nel verde e nelle colline toscane, ha reso la nostra serata ancora più speciale. ​Il cibo è stato ottimo dall'inizio alla fine, con piatti curati e…",
       "data": "2026-10-25T10:57:24.106548228Z",
       "link": "https://www.google.com/maps/contrib/106374415436152980176/reviews"
+    },
+    {
+      "fonte": "TripAdvisor",
+      "autore": "KlaGal",
+      "stelle": 5,
+      "testo": "I would give 6 stars (and more!)... if they existed! If you come here twice within 5 days, it must be good! I can only recommend that everyone choose the menu... 4 courses (appetizer plate, pasta dish, meat dish, dessert), incl. water, aperitif, wine, sherry, espresso and \"nightcap\" for an awesome fixed price! The…",
+      "data": "2026-09-18T19:06:30.944Z",
+      "link": "https://www.tripadvisor.com/ShowUserReviews-g227886-d2369638-r1078342461-Il_Ciliegio_Ristorante-Monteriggioni_Tuscany.html"
     },
     {
       "fonte": "Google",
