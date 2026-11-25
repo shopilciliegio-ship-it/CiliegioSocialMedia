@@ -89,18 +89,24 @@ async function scaricaGoogle() {
 // Il formato esatto di una recensione Terra non è documentato: i campi si leggono con più varianti e, se non si trova
 // il testo, il log stampa i campi trovati così si corregge in un giro.
 const primo = (...v) => v.find(x => x !== undefined && x !== null && x !== '');
+// I testi Terra sono liste di versioni per lingua: [{language, value, primary}]. Preferisco l'italiano, poi la versione primaria/originale.
+function testoLoc(x) {
+  if (!Array.isArray(x)) return (x && typeof x === 'object') ? String(x.value || '') : String(x || '');
+  const t = x.find(v => v && v.language === 'it') || x.find(v => v && v.primary) || x[0];
+  return t ? String(t.value || '') : '';
+}
 function normalizzaTripadvisor(reviewsJson, detailsJson) {
   const lista = Array.isArray(reviewsJson) ? reviewsJson : ((reviewsJson && (reviewsJson.data || reviewsJson.reviews)) || []);
   const items = lista.map(r => {
     const u = r.user || r.author || {};
-    const testo = primo(r.text, r.body, r.review_text, r.content, r.title, '');
+    const testo = testoLoc(primo(r.text, r.body, r.review_text, r.content, '')) || testoLoc(r.title);
     const ts = primo(r.published_date, r.publish_date, r.published_at, r.publish_ts, r.created_at, r.date, r.travel_date, null);
     const rating = primo(r.rating, r.rating_value, r.stars, (r.ratings && r.ratings.overall), null);
     return {
       fonte: 'TripAdvisor',
       autore: primo(u.username, u.display_name, u.name, r.username, r.author_name, 'Ospite'),
       stelle: Number(rating),
-      testo: taglia(typeof testo === 'object' ? (testo.value || '') : testo),
+      testo: taglia(testo),
       data: ts ? (isNaN(Date.parse(ts)) && /^\d+$/.test(String(ts)) ? new Date(Number(ts) > 1e12 ? Number(ts) : Number(ts) * 1000).toISOString() : ts) : null,
       link: primo(r.url, r.link, r.review_url, null),
     };
