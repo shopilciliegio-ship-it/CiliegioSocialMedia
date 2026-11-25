@@ -1,10 +1,11 @@
 name: Aggiorna recensioni per il sito
 
 on:
-  # Ogni giorno alle 6:15 Europe/Rome circa (05:15 UTC) e a mano. Il cron di GitHub può ritardare di ore:
-  # per le recensioni non è un problema.
+  # Ogni lunedì alle 6:15 Europe/Rome circa (05:15 UTC) e a mano. Il cron di GitHub può ritardare di ore:
+  # per le recensioni non è un problema. TODO: rimettere GIORNALIERO ('15 5 * * *') quando c'è la Business Profile API
+  # (recensioni di Google per data); con la Places API le 5 "più pertinenti" cambiano di rado.
   schedule:
-    - cron: '15 5 * * *'
+    - cron: '15 5 * * 1'
   workflow_dispatch:
 
 concurrency:

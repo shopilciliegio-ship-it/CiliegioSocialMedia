@@ -2,16 +2,21 @@
 //
 // Scarica le ultime recensioni POSITIVE (4-5 stelle) da Google e TripAdvisor e le scrive in
 // recensioni/recensioni.json, che la home del sito nuovo legge (assets/js/reviews.js) e mostra a scorrimento.
-// Gira nella GitHub Action .github/workflows/aggiorna-recensioni.yml (ogni giorno + a mano).
+// Gira nella GitHub Action .github/workflows/aggiorna-recensioni.yml (ogni lunedì + a mano).
+// NB: la Places API (New) di Google dà solo 5 recensioni "più pertinenti" (non le ultime) e cambiano di rado:
+// per questo il giro è settimanale. Quando arriverà la Business Profile API (recensioni per data) rimettere il cron giornaliero.
 //
 // Segreti/variabili richiesti (una piattaforma senza chiave viene saltata, senza errori):
 //   GOOGLE_PLACES_API_KEY (+ GOOGLE_PLACE_ID facoltativo: se manca lo ricava dal CID) -> Google (Places API "New": max 5 recensioni)
-//   TRIPADVISOR_API_KEY   + TRIPADVISOR_LOCATION_ID -> TripAdvisor (Content API: max 5 recensioni)
+//   TRIPADVISOR_API_KEY   + TRIPADVISOR_LOCATION_ID -> TripAdvisor (API Terra, piano Discover: 3 ultime recensioni)
 // TheFork non ha un'API pubblica per le recensioni: si possono aggiungere a mano in recensioni/manuali.json
 //   [{ "fonte": "TheFork", "autore": "Nome", "stelle": 5, "testo": "...", "data": "2026-11-20", "link": "https://..." }]
 //
-// Regole: solo 4 e 5 stelle, ordine dal più recente, massimo MAX_ITEMS. Se una piattaforma non risponde si
-// tengono le sue recensioni già salvate (il sito non si svuota mai). Nessuna dipendenza npm (Node 20+).
+// Regole: solo 4 e 5 stelle, ordine dal più recente, massimo MAX_ITEMS (10) mostrate sul sito.
+// ARCHIVIO: ogni recensione nuova (Google, TripAdvisor, manuali) si AGGIUNGE a recensioni/archivio.json senza duplicati
+// e non si cancella mai; recensioni.json contiene solo le MAX_ITEMS più recenti dell'archivio (le più vecchie escono
+// dalla vista ma restano in archivio). Se una piattaforma non risponde l'archivio garantisce che il sito non si svuoti.
+// Nessuna dipendenza npm (Node 20+).
 //
 // Uso: node aggiorna-recensioni.js           (scrive il file)
 //      node aggiorna-recensioni.js --prova   (stampa soltanto, non scrive)
@@ -22,6 +27,7 @@ const path = require('path');
 const DIR = path.join(__dirname, 'recensioni');
 const OUT = path.join(DIR, 'recensioni.json');
 const MANUALI = path.join(DIR, 'manuali.json');
+const ARCHIVIO = path.join(DIR, 'archivio.json');
 const MAX_ITEMS = 10;
 const MIN_STELLE = 4;
 const MAX_CHARS = 320;
@@ -77,19 +83,33 @@ async function scaricaGoogle() {
   return normalizzaGoogle(json);
 }
 
-// ---- TripAdvisor (Content API) ----
+// ---- TripAdvisor (API "Terra", dal 2026 al posto della vecchia Content API) ----
+// Indirizzo https://terra.tripadvisor.com/api, chiave nell'header X-API-Key. La vecchia api.content.tripadvisor.com
+// con una chiave Terra risponde 403 "explicit deny". Piano Discover: le 3 ultime recensioni per scheda.
+// Il formato esatto di una recensione Terra non è documentato: i campi si leggono con più varianti e, se non si trova
+// il testo, il log stampa i campi trovati così si corregge in un giro.
+const primo = (...v) => v.find(x => x !== undefined && x !== null && x !== '');
 function normalizzaTripadvisor(reviewsJson, detailsJson) {
-  const items = ((reviewsJson && reviewsJson.data) || []).map(r => ({
-    fonte: 'TripAdvisor',
-    autore: (r.user && (r.user.username || r.user.name)) || 'Ospite',
-    stelle: r.rating,
-    testo: taglia(r.text || r.title || ''),
-    data: r.published_date || null,
-    link: r.url || null,
-  }));
+  const lista = Array.isArray(reviewsJson) ? reviewsJson : ((reviewsJson && (reviewsJson.data || reviewsJson.reviews)) || []);
+  const items = lista.map(r => {
+    const u = r.user || r.author || {};
+    const testo = primo(r.text, r.body, r.review_text, r.content, r.title, '');
+    const ts = primo(r.published_date, r.publish_date, r.published_at, r.publish_ts, r.created_at, r.date, r.travel_date, null);
+    const rating = primo(r.rating, r.rating_value, r.stars, (r.ratings && r.ratings.overall), null);
+    return {
+      fonte: 'TripAdvisor',
+      autore: primo(u.username, u.display_name, u.name, r.username, r.author_name, 'Ospite'),
+      stelle: Number(rating),
+      testo: taglia(typeof testo === 'object' ? (testo.value || '') : testo),
+      data: ts ? (isNaN(Date.parse(ts)) && /^\d+$/.test(String(ts)) ? new Date(Number(ts) > 1e12 ? Number(ts) : Number(ts) * 1000).toISOString() : ts) : null,
+      link: primo(r.url, r.link, r.review_url, null),
+    };
+  });
+  if (lista.length && !items.some(i => i.testo)) console.log('ℹ️ TripAdvisor: campi di una recensione →', Object.keys(lista[0]).join(', '));
+  const ov = detailsJson && detailsJson.traveler_ratings && detailsJson.traveler_ratings.overall;
   return {
-    punteggio: detailsJson && detailsJson.rating ? Number(detailsJson.rating) : null,
-    totale: detailsJson && detailsJson.num_reviews ? Number(detailsJson.num_reviews) : null,
+    punteggio: ov && ov.rating ? Number(ov.rating) : (detailsJson && detailsJson.rating ? Number(detailsJson.rating) : null),
+    totale: ov && ov.count ? Number(ov.count) : (detailsJson && detailsJson.num_reviews ? Number(detailsJson.num_reviews) : null),
     items,
   };
 }
@@ -97,34 +117,42 @@ function normalizzaTripadvisor(reviewsJson, detailsJson) {
 async function scaricaTripadvisor() {
   const key = env('TRIPADVISOR_API_KEY'), id = env('TRIPADVISOR_LOCATION_ID');
   if (!key || !id) return null;
-  const base = `https://api.content.tripadvisor.com/api/v1/location/${encodeURIComponent(id)}`;
-  const opts = { headers: { accept: 'application/json' } };
-  const [r1, r2] = await Promise.all([
-    fetch(`${base}/reviews?key=${encodeURIComponent(key)}&language=it`, opts),
-    fetch(`${base}/details?key=${encodeURIComponent(key)}&language=it`, opts),
-  ]);
-  const reviews = await r1.json();
+  const base = `https://terra.tripadvisor.com/api/locations/${encodeURIComponent(id)}`;
+  const opts = { headers: { accept: 'application/json', 'X-API-Key': key } };
+  const [r1, r2] = await Promise.all([fetch(`${base}/reviews?size=20`, opts), fetch(base, opts)]);
+  const reviews = await r1.json().catch(() => ({}));
   if (!r1.ok) throw new Error(`TripAdvisor: ${r1.status} ${JSON.stringify(reviews).slice(0, 300)}`);
-  const details = r2.ok ? await r2.json() : null;
+  const details = r2.ok ? await r2.json().catch(() => null) : null;
   return normalizzaTripadvisor(reviews, details);
 }
 
-// ---- unione, filtro, ordine ----
-function unisci(fonti, vecchie, manuali) {
-  let items = [];
-  for (const nome of ['Google', 'TripAdvisor']) {
-    const f = fonti[nome];
-    if (f) items = items.concat(f.items);
-    else items = items.concat((vecchie.items || []).filter(i => i.fonte === nome)); // piattaforma ferma: tengo le vecchie
+// ---- unione, archivio, filtro, ordine ----
+function chiave(i) {
+  return [i.fonte, String(i.autore || '').toLowerCase(), String(i.testo || '').slice(0, 40).toLowerCase()].join('|');
+}
+// archivio = vecchio archivio + vecchie del sito (prima versione senza archivio) + nuove scaricate + manuali, senza duplicati.
+// Per un duplicato vince la versione più recente (la nuova scaricata), così testo e link restano aggiornati.
+function unisciArchivio(archivio, scaricate) {
+  const mappa = new Map();
+  for (const i of [...archivio, ...scaricate]) {
+    if (i && i.testo && Number(i.stelle) >= MIN_STELLE) mappa.set(chiave(i), i);
   }
-  items = items.concat(manuali);
-  items = items
-    .filter(i => i && i.testo && Number(i.stelle) >= MIN_STELLE)
+  return [...mappa.values()];
+}
+function ordinaETaglia(items, max = MAX_ITEMS) {
+  return items
     .map(i => ({ ...i, _t: i.data ? Date.parse(i.data) || 0 : 0 }))
     .sort((a, b) => b._t - a._t)
-    .slice(0, MAX_ITEMS)
+    .slice(0, max)
     .map(({ _t, ...i }) => i);
-  return items;
+}
+function unisci(fonti, vecchie, manuali, archivio = []) {
+  const scaricate = [];
+  for (const nome of ['Google', 'TripAdvisor']) if (fonti[nome]) scaricate.push(...fonti[nome].items);
+  scaricate.push(...manuali);
+  const base = [...archivio, ...((vecchie && vecchie.items) || [])];
+  const completo = unisciArchivio(base, scaricate);
+  return { archivio: completo, items: ordinaETaglia(completo) };
 }
 
 function leggiJson(file, def) {
@@ -134,6 +162,7 @@ function leggiJson(file, def) {
 async function main() {
   const vecchie = leggiJson(OUT, {});
   const manuali = leggiJson(MANUALI, []);
+  const archivioVecchio = leggiJson(ARCHIVIO, []);
   const fonti = { Google: null, TripAdvisor: null };
   let errori = 0;
   for (const [nome, fn] of [['Google', scaricaGoogle], ['TripAdvisor', scaricaTripadvisor]]) {
@@ -142,14 +171,14 @@ async function main() {
       console.log(fonti[nome] ? `✅ ${nome}: ${fonti[nome].items.length} recensioni scaricate (punteggio ${fonti[nome].punteggio})` : `ℹ️ ${nome}: chiavi non configurate, salto.`);
     } catch (e) { errori++; console.error(`❌ ${e.message}`); }
   }
-  const items = unisci(fonti, vecchie, manuali);
+  const { archivio, items } = unisci(fonti, vecchie, manuali, Array.isArray(archivioVecchio) ? archivioVecchio : []);
   const punteggi = {};
   for (const nome of ['Google', 'TripAdvisor']) {
     const f = fonti[nome] || (vecchie.punteggi && vecchie.punteggi[nome]);
     if (f && f.punteggio) punteggi[nome] = { punteggio: f.punteggio, totale: f.totale };
   }
   const out = { aggiornato: new Date().toISOString(), punteggi, items };
-  console.log(`📝 Recensioni positive da pubblicare: ${items.length}`);
+  console.log(`📝 Recensioni positive da pubblicare: ${items.length} (archivio: ${archivio.length})`);
   if (PROVA) { console.log(JSON.stringify(out, null, 2)); return; }
   // Mai svuotare il sito: se non c'è niente di nuovo né di vecchio, non scrivo.
   if (!items.length) { console.log('ℹ️ Nessuna recensione disponibile: lascio il file com\'è.'); return; }
@@ -159,4 +188,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-module.exports = { normalizzaGoogle, normalizzaTripadvisor, unisci };
+module.exports = { normalizzaGoogle, normalizzaTripadvisor, unisci, unisciArchivio, ordinaETaglia };
