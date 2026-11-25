@@ -1,9 +1,13 @@
 {
-  "aggiornato": "2026-11-25T10:50:27.735Z",
+  "aggiornato": "2026-11-25T10:56:45.272Z",
   "punteggi": {
     "Google": {
       "punteggio": 4.6,
       "totale": 1916
+    },
+    "TripAdvisor": {
+      "punteggio": 4.4,
+      "totale": 546
     }
   },
   "items": [
