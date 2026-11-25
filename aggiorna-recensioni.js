@@ -105,7 +105,7 @@ function normalizzaTripadvisor(reviewsJson, detailsJson) {
       link: primo(r.url, r.link, r.review_url, null),
     };
   });
-  if (lista.length && !items.some(i => i.testo)) console.log('ℹ️ TripAdvisor: campi di una recensione →', Object.keys(lista[0]).join(', '));
+  if (lista.length && !items.some(i => i.testo && i.stelle >= MIN_STELLE)) console.log('ℹ️ TripAdvisor: esempio di recensione →', JSON.stringify(lista[0]).slice(0, 900));
   const ov = detailsJson && detailsJson.traveler_ratings && detailsJson.traveler_ratings.overall;
   return {
     punteggio: ov && ov.rating ? Number(ov.rating) : (detailsJson && detailsJson.rating ? Number(detailsJson.rating) : null),
